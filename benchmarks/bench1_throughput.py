@@ -45,6 +45,7 @@ def run_benchmark_1():
         "batch_sizes": BATCH_SIZES,
         "unpruned": [], "pytorch_pruned": [], "triton_ragged": [],
         "dynamicvit_pytorch": [], "dynamicvit_triton": [],
+        "evit_pytorch": [], "evit_triton": [],
     }
 
     # ── 1. Standard DeiT ─────────────────────────────────────────────
@@ -121,6 +122,36 @@ def run_benchmark_1():
         torch.cuda.empty_cache(); gc.collect()
     del model; torch.cuda.empty_cache(); gc.collect()
 
+    # ── 6. EViT + PyTorch Padded ──────────────────────────────────────
+    print("\n=== EViT + PyTorch Padded ===")
+    from baselines.evit_pytorch import build_evit_pytorch_model
+    model = build_evit_pytorch_model()
+    for bs in BATCH_SIZES:
+        try:
+            tp = measure_throughput(lambda img: model(img, fixed_ratio=0.5), bs)
+            print(f"  BS={bs:3d}  → {tp:.1f} img/s")
+        except torch.cuda.OutOfMemoryError:
+            tp = 0.0
+            print(f"  BS={bs:3d}  → OOM")
+        results["evit_pytorch"].append(tp)
+        torch.cuda.empty_cache(); gc.collect()
+    del model; torch.cuda.empty_cache(); gc.collect()
+
+    # ── 7. EViT + Triton Ragged ──────────────────────────────────────
+    print("\n=== EViT + Triton Ragged ===")
+    from models.evit_ragged import build_evit_triton_model
+    model = build_evit_triton_model()
+    for bs in BATCH_SIZES:
+        try:
+            tp = measure_throughput(lambda img: model(img, fixed_ratio=0.5), bs)
+            print(f"  BS={bs:3d}  → {tp:.1f} img/s")
+        except torch.cuda.OutOfMemoryError:
+            tp = 0.0
+            print(f"  BS={bs:3d}  → OOM")
+        results["evit_triton"].append(tp)
+        torch.cuda.empty_cache(); gc.collect()
+    del model; torch.cuda.empty_cache(); gc.collect()
+
     # ── Save results ─────────────────────────────────────────────────
     os.makedirs("results", exist_ok=True)
     with open("results/bench1_throughput.json", "w") as f:
@@ -146,6 +177,10 @@ def plot_benchmark_1(results=None):
         ax.plot(bs, results["dynamicvit_pytorch"], "^--", label="DynamicViT PyTorch (padded)", linewidth=2, color="purple")
     if "dynamicvit_triton" in results and results["dynamicvit_triton"]:
         ax.plot(bs, results["dynamicvit_triton"],  "v-",  label="DynamicViT Triton Ragged (ours)", linewidth=2, color="orangered")
+    if "evit_pytorch" in results and results["evit_pytorch"]:
+        ax.plot(bs, results["evit_pytorch"],  "p--", label="EViT PyTorch (padded)", linewidth=2, color="teal")
+    if "evit_triton" in results and results["evit_triton"]:
+        ax.plot(bs, results["evit_triton"],   "h-",  label="EViT Triton Ragged (ours)", linewidth=2, color="darkgreen")
 
     ax.set_xlabel("Batch Size", fontsize=12)
     ax.set_ylabel("Throughput (images / sec)", fontsize=12)

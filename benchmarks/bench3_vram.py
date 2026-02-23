@@ -44,6 +44,7 @@ def run_benchmark_3():
         "batch_sizes": BATCH_SIZES,
         "unpruned": [], "pytorch_pruned": [], "triton_ragged": [],
         "dynamicvit_pytorch": [], "dynamicvit_triton": [],
+        "evit_pytorch": [], "evit_triton": [],
     }
 
     # ── 1. Standard DeiT ─────────────────────────────────────────────
@@ -120,6 +121,36 @@ def run_benchmark_3():
         torch.cuda.empty_cache(); gc.collect()
     del model; torch.cuda.empty_cache(); gc.collect()
 
+    # ── 6. EViT + PyTorch Padded ──────────────────────────────────────
+    print("\n=== EViT + PyTorch Padded VRAM ===")
+    from baselines.evit_pytorch import build_evit_pytorch_model
+    model = build_evit_pytorch_model()
+    for bs in BATCH_SIZES:
+        try:
+            vram = measure_vram(lambda img: model(img, fixed_ratio=0.5), bs)
+            print(f"  BS={bs:3d}  → {vram:.1f} MB")
+        except torch.cuda.OutOfMemoryError:
+            vram = -1
+            print(f"  BS={bs:3d}  → OOM")
+        results["evit_pytorch"].append(round(vram, 1))
+        torch.cuda.empty_cache(); gc.collect()
+    del model; torch.cuda.empty_cache(); gc.collect()
+
+    # ── 7. EViT + Triton Ragged ──────────────────────────────────────
+    print("\n=== EViT + Triton Ragged VRAM ===")
+    from models.evit_ragged import build_evit_triton_model
+    model = build_evit_triton_model()
+    for bs in BATCH_SIZES:
+        try:
+            vram = measure_vram(lambda img: model(img, fixed_ratio=0.5), bs)
+            print(f"  BS={bs:3d}  → {vram:.1f} MB")
+        except torch.cuda.OutOfMemoryError:
+            vram = -1
+            print(f"  BS={bs:3d}  → OOM")
+        results["evit_triton"].append(round(vram, 1))
+        torch.cuda.empty_cache(); gc.collect()
+    del model; torch.cuda.empty_cache(); gc.collect()
+
     # ── Save ─────────────────────────────────────────────────────────
     os.makedirs("results", exist_ok=True)
     with open("results/bench3_vram.json", "w") as f:
@@ -144,6 +175,8 @@ def plot_benchmark_3(results=None):
         ("triton_ragged", "A-ViT Triton Ragged (ours)", "D", "red"),
         ("dynamicvit_pytorch", "DynamicViT PyTorch (padded)", "^", "purple"),
         ("dynamicvit_triton", "DynamicViT Triton Ragged (ours)", "v", "orangered"),
+        ("evit_pytorch", "EViT PyTorch (padded)", "p", "teal"),
+        ("evit_triton", "EViT Triton Ragged (ours)", "h", "darkgreen"),
     ]:
         if key not in results or not results[key]:
             continue

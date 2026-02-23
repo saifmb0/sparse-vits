@@ -47,6 +47,8 @@ def run_benchmark_2():
         "triton_ragged": [],
         "dynamicvit_pytorch": [],
         "dynamicvit_triton": [],
+        "evit_pytorch": [],
+        "evit_triton": [],
     }
 
     # ── Baseline latency (unpruned) ──────────────────────────────────
@@ -137,6 +139,38 @@ def run_benchmark_2():
         torch.cuda.empty_cache(); gc.collect()
     del model_dt; torch.cuda.empty_cache(); gc.collect()
 
+    # ── EViT + PyTorch Padded ─────────────────────────────────────
+    print("\n=== EViT + PyTorch Padded ===")
+    from baselines.evit_pytorch import build_evit_pytorch_model
+    model_ep = build_evit_pytorch_model()
+    for ratio in PRUNE_RATIOS:
+        try:
+            lat = measure_latency(lambda img: model_ep(img, fixed_ratio=ratio), FIXED_BATCH)
+            speedup = base_latency / lat
+            print(f"  ratio={ratio:.1f}  lat={lat:.2f}ms  speedup={speedup:.2f}x")
+        except torch.cuda.OutOfMemoryError:
+            speedup = 0.0
+            print(f"  ratio={ratio:.1f}  OOM")
+        results["evit_pytorch"].append(round(speedup, 3))
+        torch.cuda.empty_cache(); gc.collect()
+    del model_ep; torch.cuda.empty_cache(); gc.collect()
+
+    # ── EViT + Triton Ragged ─────────────────────────────────────
+    print("\n=== EViT + Triton Ragged ===")
+    from models.evit_ragged import build_evit_triton_model
+    model_et = build_evit_triton_model()
+    for ratio in PRUNE_RATIOS:
+        try:
+            lat = measure_latency(lambda img: model_et(img, fixed_ratio=ratio), FIXED_BATCH)
+            speedup = base_latency / lat
+            print(f"  ratio={ratio:.1f}  lat={lat:.2f}ms  speedup={speedup:.2f}x")
+        except torch.cuda.OutOfMemoryError:
+            speedup = 0.0
+            print(f"  ratio={ratio:.1f}  OOM")
+        results["evit_triton"].append(round(speedup, 3))
+        torch.cuda.empty_cache(); gc.collect()
+    del model_et; torch.cuda.empty_cache(); gc.collect()
+
     # ── Save ─────────────────────────────────────────────────────────
     os.makedirs("results", exist_ok=True)
     with open("results/bench2_sparsity.json", "w") as f:
@@ -161,6 +195,10 @@ def plot_benchmark_2(results=None):
         ax.plot(ratios, results["dynamicvit_pytorch"], "^--", label="DynamicViT PyTorch (padded)", linewidth=2, color="purple")
     if "dynamicvit_triton" in results and results["dynamicvit_triton"]:
         ax.plot(ratios, results["dynamicvit_triton"],  "v-",  label="DynamicViT Triton Ragged (ours)", linewidth=2, color="orangered")
+    if "evit_pytorch" in results and results["evit_pytorch"]:
+        ax.plot(ratios, results["evit_pytorch"],  "p--", label="EViT PyTorch (padded)", linewidth=2, color="teal")
+    if "evit_triton" in results and results["evit_triton"]:
+        ax.plot(ratios, results["evit_triton"],   "h-",  label="EViT Triton Ragged (ours)", linewidth=2, color="darkgreen")
 
     ax.axhline(y=1.0, color="gray", linestyle=":", alpha=0.5)
 
