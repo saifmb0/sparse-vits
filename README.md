@@ -6,7 +6,7 @@ A systems-level research project that demonstrates how **Triton GPU kernels** el
 
 When you prune tokens from a Vision Transformer, each image in a batch ends up with a **different number of tokens**. Standard PyTorch handles this by padding every image back to the same length — wasting compute on zeros. This project builds two custom Triton kernels that process ragged batches natively, achieving real speedups that track the theoretical ideal.
 
-We benchmark our Triton ragged-attention engine against **four different pruning strategies** × **two execution backends** (PyTorch padded vs. Triton ragged), for a total of **9 model configurations**.
+We benchmark our Triton ragged-attention engine against **four different pruning strategies** × **two execution backends** (PyTorch padded vs. Triton ragged), plus a **ToMe (Token Merging)** PyTorch-only baseline, for a total of **10 model configurations**.
 
 ## Architecture
 
@@ -55,12 +55,13 @@ Input Images [B, 3, 224, 224]
 | **DynamicViT** | Learned (active) | ~150K | MLP forward pass | Trained MLP gate predicts keep probability |
 | **EViT** | Attention-based (passive) | 0 | Near-zero | CLS→patch attention scores from last early block |
 | **ATS** | Statistical (CDF) | 0 | Moderate (sort+cumsum) | CLS-attn × value-norm → PDF → CDF inverse sampling |
+| **ToMe** | Merging | 0 | Moderate (key similarity) | Bipartite soft matching on keys → merge most similar pairs |
 
 Each strategy is tested with two execution backends:
 - **PyTorch (pad)** — gather kept tokens, zero-pad back to max length, run with attention mask
 - **Triton (ours)** — pack into a flat ragged tensor, run with cu_seqlens-guided kernels
 
-Plus the **Unpruned DeiT-S** baseline (no pruning, standard forward pass).
+Plus the **Unpruned DeiT-S** baseline (no pruning, standard forward pass) and **ToMe** (token merging, PyTorch only — merges tokens rather than dropping them, so it always produces uniform-length sequences and doesn't benefit from ragged kernels).
 
 ## Custom Triton Kernels
 
@@ -86,7 +87,7 @@ Measures `torch.cuda.max_memory_allocated()` across batch sizes. Triton ragged u
 ```
 triton_pruner/
 ├── config.py                       # Global constants (model, pruning, benchmarking)
-├── smoke_test.py                   # Quick correctness checks (10 tests)
+├── smoke_test.py                   # Quick correctness checks (11 tests)
 ├── run_all.py                      # Master runner (--bench N, --plot)
 │
 ├── models/
@@ -105,7 +106,8 @@ triton_pruner/
 │   ├── pytorch_pruned.py           # Threshold-L2 + PyTorch padded baseline
 │   ├── dynamicvit_pytorch.py       # DynamicViT + PyTorch padded baseline
 │   ├── evit_pytorch.py             # EViT + PyTorch padded baseline
-│   └── ats_pytorch.py              # ATS + PyTorch padded baseline
+│   ├── ats_pytorch.py              # ATS + PyTorch padded baseline
+│   └── tome_pytorch.py             # ToMe (token merging) PyTorch-only baseline
 │
 ├── kernels/
 │   ├── pack_tokens.py              # Triton Kernel 1: Fused Token Packer
@@ -162,3 +164,4 @@ The central finding: **the execution backend matters more than the pruning strat
 | DynamicViT | Highest (MLP gate) | Moderate variance | When you can afford retraining |
 | EViT | Near-zero | Moderate variance | Drop-in replacement, no retraining |
 | ATS | Moderate (sort+cumsum) | Highest variance | Stress-testing ragged engines |
+| ToMe | Moderate (key similarity) | N/A (merges, not drops) | Comparison baseline (PyTorch only) |

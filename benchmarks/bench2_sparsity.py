@@ -51,6 +51,7 @@ def run_benchmark_2():
         "evit_triton": [],
         "ats_pytorch": [],
         "ats_triton": [],
+        "tome_pytorch": [],
     }
 
     # ── Baseline latency (unpruned) ──────────────────────────────────
@@ -203,6 +204,23 @@ def run_benchmark_2():
         results["ats_triton"].append(round(speedup, 3))
         torch.cuda.empty_cache(); gc.collect()
     del model_at; torch.cuda.empty_cache(); gc.collect()
+
+    # ── ToMe (PyTorch only) ──────────────────────────────────────────
+    print("\n=== ToMe · PyTorch ===")
+    from baselines.tome_pytorch import build_tome_model
+    model_tm = build_tome_model()
+    for ratio in PRUNE_RATIOS:
+        try:
+            lat = measure_latency(lambda img: model_tm(img, fixed_ratio=ratio), FIXED_BATCH)
+            speedup = base_latency / lat
+            print(f"  ratio={ratio:.1f}  lat={lat:.2f}ms  speedup={speedup:.2f}x")
+        except torch.cuda.OutOfMemoryError:
+            speedup = 0.0
+            print(f"  ratio={ratio:.1f}  OOM")
+        results["tome_pytorch"].append(round(speedup, 3))
+        torch.cuda.empty_cache(); gc.collect()
+    del model_tm; torch.cuda.empty_cache(); gc.collect()
+
     # ── Save ─────────────────────────────────────────────────────────
     os.makedirs("results", exist_ok=True)
     with open("results/bench2_sparsity.json", "w") as f:
@@ -235,6 +253,8 @@ def plot_benchmark_2(results=None):
         ax.plot(ratios, results["ats_pytorch"],   "*--", label="ATS · PyTorch (pad)", linewidth=2, color="goldenrod", markersize=10)
     if "ats_triton" in results and results["ats_triton"]:
         ax.plot(ratios, results["ats_triton"],    "X-",  label="ATS · Triton (ours)", linewidth=2, color="darkorange", markersize=9)
+    if "tome_pytorch" in results and results["tome_pytorch"]:
+        ax.plot(ratios, results["tome_pytorch"],  "d-",  label="ToMe · PyTorch (merge)", linewidth=2, color="brown")
 
     ax.axhline(y=1.0, color="gray", linestyle=":", alpha=0.5)
 

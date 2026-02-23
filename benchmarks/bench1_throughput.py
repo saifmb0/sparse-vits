@@ -47,6 +47,7 @@ def run_benchmark_1():
         "dynamicvit_pytorch": [], "dynamicvit_triton": [],
         "evit_pytorch": [], "evit_triton": [],
         "ats_pytorch": [], "ats_triton": [],
+        "tome_pytorch": [],
     }
 
     # ── 1. Standard DeiT ─────────────────────────────────────────────
@@ -183,6 +184,21 @@ def run_benchmark_1():
         torch.cuda.empty_cache(); gc.collect()
     del model; torch.cuda.empty_cache(); gc.collect()
 
+    # ── 10. ToMe (PyTorch only) ──────────────────────────────────────
+    print("\n=== ToMe · PyTorch ===")
+    from baselines.tome_pytorch import build_tome_model
+    model = build_tome_model()
+    for bs in BATCH_SIZES:
+        try:
+            tp = measure_throughput(lambda img: model(img, fixed_ratio=0.5), bs)
+            print(f"  BS={bs:3d}  → {tp:.1f} img/s")
+        except torch.cuda.OutOfMemoryError:
+            tp = 0.0
+            print(f"  BS={bs:3d}  → OOM")
+        results["tome_pytorch"].append(tp)
+        torch.cuda.empty_cache(); gc.collect()
+    del model; torch.cuda.empty_cache(); gc.collect()
+
     # ── Save results ─────────────────────────────────────────────────
     os.makedirs("results", exist_ok=True)
     with open("results/bench1_throughput.json", "w") as f:
@@ -216,6 +232,8 @@ def plot_benchmark_1(results=None):
         ax.plot(bs, results["ats_pytorch"],   "*--", label="ATS · PyTorch (pad)", linewidth=2, color="goldenrod", markersize=10)
     if "ats_triton" in results and results["ats_triton"]:
         ax.plot(bs, results["ats_triton"],    "X-",  label="ATS · Triton (ours)", linewidth=2, color="darkorange", markersize=9)
+    if "tome_pytorch" in results and results["tome_pytorch"]:
+        ax.plot(bs, results["tome_pytorch"],  "d--", label="ToMe · PyTorch (merge)", linewidth=2, color="brown")
 
     ax.set_xlabel("Batch Size", fontsize=12)
     ax.set_ylabel("Throughput (images / sec)", fontsize=12)

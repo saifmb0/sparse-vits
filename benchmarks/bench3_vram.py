@@ -46,6 +46,7 @@ def run_benchmark_3():
         "dynamicvit_pytorch": [], "dynamicvit_triton": [],
         "evit_pytorch": [], "evit_triton": [],
         "ats_pytorch": [], "ats_triton": [],
+        "tome_pytorch": [],
     }
 
     # ── 1. Standard DeiT ─────────────────────────────────────────────
@@ -180,6 +181,22 @@ def run_benchmark_3():
         results["ats_triton"].append(round(vram, 1))
         torch.cuda.empty_cache(); gc.collect()
     del model; torch.cuda.empty_cache(); gc.collect()
+
+    # ── 10. ToMe (PyTorch only) ──────────────────────────────────────
+    print("\n=== ToMe · PyTorch VRAM ===")
+    from baselines.tome_pytorch import build_tome_model
+    model = build_tome_model()
+    for bs in BATCH_SIZES:
+        try:
+            vram = measure_vram(lambda img: model(img, fixed_ratio=0.5), bs)
+            print(f"  BS={bs:3d}  → {vram:.1f} MB")
+        except torch.cuda.OutOfMemoryError:
+            vram = -1
+            print(f"  BS={bs:3d}  → OOM")
+        results["tome_pytorch"].append(round(vram, 1))
+        torch.cuda.empty_cache(); gc.collect()
+    del model; torch.cuda.empty_cache(); gc.collect()
+
     # ── Save ─────────────────────────────────────────────────────────
     os.makedirs("results", exist_ok=True)
     with open("results/bench3_vram.json", "w") as f:
@@ -208,6 +225,7 @@ def plot_benchmark_3(results=None):
         ("evit_triton", "EViT · Triton (ours)", "h", "darkgreen"),
         ("ats_pytorch", "ATS · PyTorch (pad)", "*", "goldenrod"),
         ("ats_triton", "ATS · Triton (ours)", "X", "darkorange"),
+        ("tome_pytorch", "ToMe · PyTorch (merge)", "d", "brown"),
     ]:
         if key not in results or not results[key]:
             continue
