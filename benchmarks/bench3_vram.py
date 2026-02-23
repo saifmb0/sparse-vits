@@ -45,6 +45,7 @@ def run_benchmark_3():
         "unpruned": [], "pytorch_pruned": [], "triton_ragged": [],
         "dynamicvit_pytorch": [], "dynamicvit_triton": [],
         "evit_pytorch": [], "evit_triton": [],
+        "ats_pytorch": [], "ats_triton": [],
     }
 
     # ── 1. Standard DeiT ─────────────────────────────────────────────
@@ -150,7 +151,35 @@ def run_benchmark_3():
         results["evit_triton"].append(round(vram, 1))
         torch.cuda.empty_cache(); gc.collect()
     del model; torch.cuda.empty_cache(); gc.collect()
+    # ── 8. ATS + PyTorch Padded ──────────────────────────────────────
+    print("\n=== ATS + PyTorch Padded VRAM ===")
+    from baselines.ats_pytorch import build_ats_pytorch_model
+    model = build_ats_pytorch_model()
+    for bs in BATCH_SIZES:
+        try:
+            vram = measure_vram(lambda img: model(img, fixed_ratio=0.5), bs)
+            print(f"  BS={bs:3d}  → {vram:.1f} MB")
+        except torch.cuda.OutOfMemoryError:
+            vram = -1
+            print(f"  BS={bs:3d}  → OOM")
+        results["ats_pytorch"].append(round(vram, 1))
+        torch.cuda.empty_cache(); gc.collect()
+    del model; torch.cuda.empty_cache(); gc.collect()
 
+    # ── 9. ATS + Triton Ragged ──────────────────────────────────────
+    print("\n=== ATS + Triton Ragged VRAM ===")
+    from models.ats_ragged import build_ats_triton_model
+    model = build_ats_triton_model()
+    for bs in BATCH_SIZES:
+        try:
+            vram = measure_vram(lambda img: model(img, fixed_ratio=0.5), bs)
+            print(f"  BS={bs:3d}  → {vram:.1f} MB")
+        except torch.cuda.OutOfMemoryError:
+            vram = -1
+            print(f"  BS={bs:3d}  → OOM")
+        results["ats_triton"].append(round(vram, 1))
+        torch.cuda.empty_cache(); gc.collect()
+    del model; torch.cuda.empty_cache(); gc.collect()
     # ── Save ─────────────────────────────────────────────────────────
     os.makedirs("results", exist_ok=True)
     with open("results/bench3_vram.json", "w") as f:
@@ -170,13 +199,15 @@ def plot_benchmark_3(results=None):
     fig, ax = plt.subplots(figsize=(10, 6))
 
     for key, label, marker, color in [
-        ("unpruned", "Standard DeiT", "o", None),
-        ("pytorch_pruned", "A-ViT PyTorch (padded)", "s", None),
-        ("triton_ragged", "A-ViT Triton Ragged (ours)", "D", "red"),
-        ("dynamicvit_pytorch", "DynamicViT PyTorch (padded)", "^", "purple"),
-        ("dynamicvit_triton", "DynamicViT Triton Ragged (ours)", "v", "orangered"),
-        ("evit_pytorch", "EViT PyTorch (padded)", "p", "teal"),
-        ("evit_triton", "EViT Triton Ragged (ours)", "h", "darkgreen"),
+        ("unpruned", "Unpruned DeiT-S", "o", "black"),
+        ("pytorch_pruned", "Threshold-L2 · PyTorch (pad)", "s", "#1f77b4"),
+        ("triton_ragged", "Threshold-L2 · Triton (ours)", "D", "red"),
+        ("dynamicvit_pytorch", "DynamicViT · PyTorch (pad)", "^", "purple"),
+        ("dynamicvit_triton", "DynamicViT · Triton (ours)", "v", "orangered"),
+        ("evit_pytorch", "EViT · PyTorch (pad)", "p", "teal"),
+        ("evit_triton", "EViT · Triton (ours)", "h", "darkgreen"),
+        ("ats_pytorch", "ATS · PyTorch (pad)", "*", "goldenrod"),
+        ("ats_triton", "ATS · Triton (ours)", "X", "darkorange"),
     ]:
         if key not in results or not results[key]:
             continue
@@ -184,12 +215,13 @@ def plot_benchmark_3(results=None):
         valid_bs = [b for b, v in zip(bs, vals) if v > 0]
         valid_v  = [v for v in vals if v > 0]
         kwargs = {"color": color} if color else {}
-        ax.plot(valid_bs, valid_v, f"{marker}-", label=label, linewidth=2, **kwargs)
+        kwms = {"markersize": 10} if marker in ("*", "X") else {}
+        ax.plot(valid_bs, valid_v, f"{marker}-", label=label, linewidth=2, **kwargs, **kwms)
 
     ax.set_xlabel("Batch Size", fontsize=12)
     ax.set_ylabel("Peak VRAM (MB)", fontsize=12)
     ax.set_title("Benchmark 3: Peak VRAM Allocation", fontsize=14)
-    ax.legend(fontsize=11)
+    ax.legend(fontsize=8, ncol=2)
     ax.grid(True, alpha=0.3)
     ax.set_xticks(bs)
 

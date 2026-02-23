@@ -46,6 +46,7 @@ def run_benchmark_1():
         "unpruned": [], "pytorch_pruned": [], "triton_ragged": [],
         "dynamicvit_pytorch": [], "dynamicvit_triton": [],
         "evit_pytorch": [], "evit_triton": [],
+        "ats_pytorch": [], "ats_triton": [],
     }
 
     # ── 1. Standard DeiT ─────────────────────────────────────────────
@@ -152,6 +153,36 @@ def run_benchmark_1():
         torch.cuda.empty_cache(); gc.collect()
     del model; torch.cuda.empty_cache(); gc.collect()
 
+    # ── 8. ATS + PyTorch Padded ──────────────────────────────────────
+    print("\n=== ATS + PyTorch Padded ===")
+    from baselines.ats_pytorch import build_ats_pytorch_model
+    model = build_ats_pytorch_model()
+    for bs in BATCH_SIZES:
+        try:
+            tp = measure_throughput(lambda img: model(img, fixed_ratio=0.5), bs)
+            print(f"  BS={bs:3d}  → {tp:.1f} img/s")
+        except torch.cuda.OutOfMemoryError:
+            tp = 0.0
+            print(f"  BS={bs:3d}  → OOM")
+        results["ats_pytorch"].append(tp)
+        torch.cuda.empty_cache(); gc.collect()
+    del model; torch.cuda.empty_cache(); gc.collect()
+
+    # ── 9. ATS + Triton Ragged ──────────────────────────────────────
+    print("\n=== ATS + Triton Ragged ===")
+    from models.ats_ragged import build_ats_triton_model
+    model = build_ats_triton_model()
+    for bs in BATCH_SIZES:
+        try:
+            tp = measure_throughput(lambda img: model(img, fixed_ratio=0.5), bs)
+            print(f"  BS={bs:3d}  → {tp:.1f} img/s")
+        except torch.cuda.OutOfMemoryError:
+            tp = 0.0
+            print(f"  BS={bs:3d}  → OOM")
+        results["ats_triton"].append(tp)
+        torch.cuda.empty_cache(); gc.collect()
+    del model; torch.cuda.empty_cache(); gc.collect()
+
     # ── Save results ─────────────────────────────────────────────────
     os.makedirs("results", exist_ok=True)
     with open("results/bench1_throughput.json", "w") as f:
@@ -170,22 +201,26 @@ def plot_benchmark_1(results=None):
     bs = results["batch_sizes"]
 
     fig, ax = plt.subplots(figsize=(10, 6))
-    ax.plot(bs, results["unpruned"],        "o-",  label="Standard DeiT", linewidth=2)
-    ax.plot(bs, results["pytorch_pruned"],  "s--", label="A-ViT PyTorch (padded)", linewidth=2)
-    ax.plot(bs, results["triton_ragged"],   "D-",  label="A-ViT Triton Ragged (ours)", linewidth=2, color="red")
+    ax.plot(bs, results["unpruned"],        "o-",  label="Unpruned DeiT-S", linewidth=2, color="black")
+    ax.plot(bs, results["pytorch_pruned"],  "s--", label="Threshold-L2 · PyTorch (pad)", linewidth=2, color="#1f77b4")
+    ax.plot(bs, results["triton_ragged"],   "D-",  label="Threshold-L2 · Triton (ours)", linewidth=2, color="red")
     if "dynamicvit_pytorch" in results and results["dynamicvit_pytorch"]:
-        ax.plot(bs, results["dynamicvit_pytorch"], "^--", label="DynamicViT PyTorch (padded)", linewidth=2, color="purple")
+        ax.plot(bs, results["dynamicvit_pytorch"], "^--", label="DynamicViT · PyTorch (pad)", linewidth=2, color="purple")
     if "dynamicvit_triton" in results and results["dynamicvit_triton"]:
-        ax.plot(bs, results["dynamicvit_triton"],  "v-",  label="DynamicViT Triton Ragged (ours)", linewidth=2, color="orangered")
+        ax.plot(bs, results["dynamicvit_triton"],  "v-",  label="DynamicViT · Triton (ours)", linewidth=2, color="orangered")
     if "evit_pytorch" in results and results["evit_pytorch"]:
-        ax.plot(bs, results["evit_pytorch"],  "p--", label="EViT PyTorch (padded)", linewidth=2, color="teal")
+        ax.plot(bs, results["evit_pytorch"],  "p--", label="EViT · PyTorch (pad)", linewidth=2, color="teal")
     if "evit_triton" in results and results["evit_triton"]:
-        ax.plot(bs, results["evit_triton"],   "h-",  label="EViT Triton Ragged (ours)", linewidth=2, color="darkgreen")
+        ax.plot(bs, results["evit_triton"],   "h-",  label="EViT · Triton (ours)", linewidth=2, color="darkgreen")
+    if "ats_pytorch" in results and results["ats_pytorch"]:
+        ax.plot(bs, results["ats_pytorch"],   "*--", label="ATS · PyTorch (pad)", linewidth=2, color="goldenrod", markersize=10)
+    if "ats_triton" in results and results["ats_triton"]:
+        ax.plot(bs, results["ats_triton"],    "X-",  label="ATS · Triton (ours)", linewidth=2, color="darkorange", markersize=9)
 
     ax.set_xlabel("Batch Size", fontsize=12)
     ax.set_ylabel("Throughput (images / sec)", fontsize=12)
     ax.set_title("Benchmark 1: Batch-Size Scaling", fontsize=14)
-    ax.legend(fontsize=10, loc="upper left")
+    ax.legend(fontsize=8, loc="upper left", ncol=2)
     ax.grid(True, alpha=0.3)
     ax.set_xticks(bs)
 

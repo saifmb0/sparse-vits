@@ -190,6 +190,42 @@ def test_evit_triton():
     torch.cuda.empty_cache()
 
 
+def test_ats_pytorch():
+    print("Testing ATS + PyTorch Padded pipeline...")
+    from baselines.ats_pytorch import build_ats_pytorch_model
+    from models.deit_base import get_dtype
+
+    model = build_ats_pytorch_model()
+    dtype = get_dtype()
+    images = torch.randn(2, 3, 224, 224, device=DEVICE, dtype=dtype)
+
+    logits = model(images, fixed_ratio=0.5)
+    assert logits.shape == (2, 1000), f"Expected (2, 1000), got {logits.shape}"
+    assert not torch.isnan(logits).any(), "Logits contain NaN!"
+    print(f"  ✓ Output shape: {logits.shape}")
+
+    del model
+    torch.cuda.empty_cache()
+
+
+def test_ats_triton():
+    print("Testing ATS + Triton Ragged pipeline...")
+    from models.ats_ragged import build_ats_triton_model
+    from models.deit_base import get_dtype
+
+    model = build_ats_triton_model()
+    dtype = get_dtype()
+    images = torch.randn(2, 3, 224, 224, device=DEVICE, dtype=dtype)
+
+    logits = model(images, fixed_ratio=0.5)
+    assert logits.shape == (2, 1000), f"Expected (2, 1000), got {logits.shape}"
+    assert not torch.isnan(logits).any(), "Logits contain NaN!"
+    print(f"  ✓ Output shape: {logits.shape}")
+
+    del model
+    torch.cuda.empty_cache()
+
+
 if __name__ == "__main__":
     print("=" * 50)
     print("SMOKE TESTS")
@@ -210,6 +246,10 @@ if __name__ == "__main__":
     test_evit_pytorch()
     print()
     test_evit_triton()
+    print()
+    test_ats_pytorch()
+    print()
+    test_ats_triton()
 
     print()
     print("=" * 50)

@@ -49,6 +49,8 @@ def run_benchmark_2():
         "dynamicvit_triton": [],
         "evit_pytorch": [],
         "evit_triton": [],
+        "ats_pytorch": [],
+        "ats_triton": [],
     }
 
     # ── Baseline latency (unpruned) ──────────────────────────────────
@@ -170,7 +172,37 @@ def run_benchmark_2():
         results["evit_triton"].append(round(speedup, 3))
         torch.cuda.empty_cache(); gc.collect()
     del model_et; torch.cuda.empty_cache(); gc.collect()
+    # ── ATS + PyTorch Padded ─────────────────────────────────────
+    print("\n=== ATS + PyTorch Padded ===")
+    from baselines.ats_pytorch import build_ats_pytorch_model
+    model_ap = build_ats_pytorch_model()
+    for ratio in PRUNE_RATIOS:
+        try:
+            lat = measure_latency(lambda img: model_ap(img, fixed_ratio=ratio), FIXED_BATCH)
+            speedup = base_latency / lat
+            print(f"  ratio={ratio:.1f}  lat={lat:.2f}ms  speedup={speedup:.2f}x")
+        except torch.cuda.OutOfMemoryError:
+            speedup = 0.0
+            print(f"  ratio={ratio:.1f}  OOM")
+        results["ats_pytorch"].append(round(speedup, 3))
+        torch.cuda.empty_cache(); gc.collect()
+    del model_ap; torch.cuda.empty_cache(); gc.collect()
 
+    # ── ATS + Triton Ragged ─────────────────────────────────────
+    print("\n=== ATS + Triton Ragged ===")
+    from models.ats_ragged import build_ats_triton_model
+    model_at = build_ats_triton_model()
+    for ratio in PRUNE_RATIOS:
+        try:
+            lat = measure_latency(lambda img: model_at(img, fixed_ratio=ratio), FIXED_BATCH)
+            speedup = base_latency / lat
+            print(f"  ratio={ratio:.1f}  lat={lat:.2f}ms  speedup={speedup:.2f}x")
+        except torch.cuda.OutOfMemoryError:
+            speedup = 0.0
+            print(f"  ratio={ratio:.1f}  OOM")
+        results["ats_triton"].append(round(speedup, 3))
+        torch.cuda.empty_cache(); gc.collect()
+    del model_at; torch.cuda.empty_cache(); gc.collect()
     # ── Save ─────────────────────────────────────────────────────────
     os.makedirs("results", exist_ok=True)
     with open("results/bench2_sparsity.json", "w") as f:
@@ -189,23 +221,27 @@ def plot_benchmark_2(results=None):
 
     fig, ax = plt.subplots(figsize=(10, 6))
     ax.plot(ratios, results["theoretical"],    "k--", label="Theoretical (ideal)", linewidth=2, alpha=0.7)
-    ax.plot(ratios, results["pytorch_pruned"], "s-",  label="A-ViT PyTorch (padded)", linewidth=2)
-    ax.plot(ratios, results["triton_ragged"],  "D-",  label="A-ViT Triton Ragged (ours)", linewidth=2, color="red")
+    ax.plot(ratios, results["pytorch_pruned"], "s-",  label="Threshold-L2 · PyTorch (pad)", linewidth=2, color="#1f77b4")
+    ax.plot(ratios, results["triton_ragged"],  "D-",  label="Threshold-L2 · Triton (ours)", linewidth=2, color="red")
     if "dynamicvit_pytorch" in results and results["dynamicvit_pytorch"]:
-        ax.plot(ratios, results["dynamicvit_pytorch"], "^--", label="DynamicViT PyTorch (padded)", linewidth=2, color="purple")
+        ax.plot(ratios, results["dynamicvit_pytorch"], "^--", label="DynamicViT · PyTorch (pad)", linewidth=2, color="purple")
     if "dynamicvit_triton" in results and results["dynamicvit_triton"]:
-        ax.plot(ratios, results["dynamicvit_triton"],  "v-",  label="DynamicViT Triton Ragged (ours)", linewidth=2, color="orangered")
+        ax.plot(ratios, results["dynamicvit_triton"],  "v-",  label="DynamicViT · Triton (ours)", linewidth=2, color="orangered")
     if "evit_pytorch" in results and results["evit_pytorch"]:
-        ax.plot(ratios, results["evit_pytorch"],  "p--", label="EViT PyTorch (padded)", linewidth=2, color="teal")
+        ax.plot(ratios, results["evit_pytorch"],  "p--", label="EViT · PyTorch (pad)", linewidth=2, color="teal")
     if "evit_triton" in results and results["evit_triton"]:
-        ax.plot(ratios, results["evit_triton"],   "h-",  label="EViT Triton Ragged (ours)", linewidth=2, color="darkgreen")
+        ax.plot(ratios, results["evit_triton"],   "h-",  label="EViT · Triton (ours)", linewidth=2, color="darkgreen")
+    if "ats_pytorch" in results and results["ats_pytorch"]:
+        ax.plot(ratios, results["ats_pytorch"],   "*--", label="ATS · PyTorch (pad)", linewidth=2, color="goldenrod", markersize=10)
+    if "ats_triton" in results and results["ats_triton"]:
+        ax.plot(ratios, results["ats_triton"],    "X-",  label="ATS · Triton (ours)", linewidth=2, color="darkorange", markersize=9)
 
     ax.axhline(y=1.0, color="gray", linestyle=":", alpha=0.5)
 
     ax.set_xlabel("Pruning Ratio (%)", fontsize=12)
     ax.set_ylabel("Speedup (×)", fontsize=12)
     ax.set_title("Benchmark 2: Sparsity vs. Real Speedup", fontsize=14)
-    ax.legend(fontsize=11)
+    ax.legend(fontsize=8, ncol=2)
     ax.grid(True, alpha=0.3)
 
     plt.tight_layout()
