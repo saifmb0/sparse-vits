@@ -41,7 +41,11 @@ def measure_throughput(model_fn, batch_size, warmup=WARMUP_ITERS, iters=BENCH_IT
 
 
 def run_benchmark_1():
-    results = {"batch_sizes": BATCH_SIZES, "unpruned": [], "pytorch_pruned": [], "triton_ragged": []}
+    results = {
+        "batch_sizes": BATCH_SIZES,
+        "unpruned": [], "pytorch_pruned": [], "triton_ragged": [],
+        "dynamicvit_pytorch": [], "dynamicvit_triton": [],
+    }
 
     # ── 1. Standard DeiT ─────────────────────────────────────────────
     print("=== Standard DeiT (unpruned) ===")
@@ -87,6 +91,36 @@ def run_benchmark_1():
         torch.cuda.empty_cache(); gc.collect()
     del model; torch.cuda.empty_cache(); gc.collect()
 
+    # ── 4. DynamicViT + PyTorch Padded ────────────────────────────────
+    print("\n=== DynamicViT + PyTorch Padded ===")
+    from baselines.dynamicvit_pytorch import build_dynamicvit_pytorch_model
+    model = build_dynamicvit_pytorch_model()
+    for bs in BATCH_SIZES:
+        try:
+            tp = measure_throughput(lambda img: model(img, fixed_ratio=0.5), bs)
+            print(f"  BS={bs:3d}  → {tp:.1f} img/s")
+        except torch.cuda.OutOfMemoryError:
+            tp = 0.0
+            print(f"  BS={bs:3d}  → OOM")
+        results["dynamicvit_pytorch"].append(tp)
+        torch.cuda.empty_cache(); gc.collect()
+    del model; torch.cuda.empty_cache(); gc.collect()
+
+    # ── 5. DynamicViT + Triton Ragged ────────────────────────────────
+    print("\n=== DynamicViT + Triton Ragged ===")
+    from models.dynamicvit_ragged import build_dynamicvit_triton_model
+    model = build_dynamicvit_triton_model()
+    for bs in BATCH_SIZES:
+        try:
+            tp = measure_throughput(lambda img: model(img, fixed_ratio=0.5), bs)
+            print(f"  BS={bs:3d}  → {tp:.1f} img/s")
+        except torch.cuda.OutOfMemoryError:
+            tp = 0.0
+            print(f"  BS={bs:3d}  → OOM")
+        results["dynamicvit_triton"].append(tp)
+        torch.cuda.empty_cache(); gc.collect()
+    del model; torch.cuda.empty_cache(); gc.collect()
+
     # ── Save results ─────────────────────────────────────────────────
     os.makedirs("results", exist_ok=True)
     with open("results/bench1_throughput.json", "w") as f:
@@ -104,15 +138,19 @@ def plot_benchmark_1(results=None):
 
     bs = results["batch_sizes"]
 
-    fig, ax = plt.subplots(figsize=(8, 5))
-    ax.plot(bs, results["unpruned"],        "o-", label="Standard DeiT", linewidth=2)
-    ax.plot(bs, results["pytorch_pruned"],  "s--", label="PyTorch Pruned (padded)", linewidth=2)
-    ax.plot(bs, results["triton_ragged"],   "D-", label="Triton Ragged (ours)", linewidth=2, color="red")
+    fig, ax = plt.subplots(figsize=(10, 6))
+    ax.plot(bs, results["unpruned"],        "o-",  label="Standard DeiT", linewidth=2)
+    ax.plot(bs, results["pytorch_pruned"],  "s--", label="A-ViT PyTorch (padded)", linewidth=2)
+    ax.plot(bs, results["triton_ragged"],   "D-",  label="A-ViT Triton Ragged (ours)", linewidth=2, color="red")
+    if "dynamicvit_pytorch" in results and results["dynamicvit_pytorch"]:
+        ax.plot(bs, results["dynamicvit_pytorch"], "^--", label="DynamicViT PyTorch (padded)", linewidth=2, color="purple")
+    if "dynamicvit_triton" in results and results["dynamicvit_triton"]:
+        ax.plot(bs, results["dynamicvit_triton"],  "v-",  label="DynamicViT Triton Ragged (ours)", linewidth=2, color="orangered")
 
     ax.set_xlabel("Batch Size", fontsize=12)
     ax.set_ylabel("Throughput (images / sec)", fontsize=12)
     ax.set_title("Benchmark 1: Batch-Size Scaling", fontsize=14)
-    ax.legend(fontsize=11)
+    ax.legend(fontsize=10, loc="upper left")
     ax.grid(True, alpha=0.3)
     ax.set_xticks(bs)
 

@@ -118,6 +118,42 @@ def test_pytorch_pruned():
     torch.cuda.empty_cache()
 
 
+def test_dynamicvit_pytorch():
+    print("Testing DynamicViT + PyTorch Padded pipeline...")
+    from baselines.dynamicvit_pytorch import build_dynamicvit_pytorch_model
+    from models.deit_base import get_dtype
+
+    model = build_dynamicvit_pytorch_model()
+    dtype = get_dtype()
+    images = torch.randn(2, 3, 224, 224, device=DEVICE, dtype=dtype)
+
+    logits = model(images, fixed_ratio=0.5)
+    assert logits.shape == (2, 1000), f"Expected (2, 1000), got {logits.shape}"
+    assert not torch.isnan(logits).any(), "Logits contain NaN!"
+    print(f"  ✓ Output shape: {logits.shape}")
+
+    del model
+    torch.cuda.empty_cache()
+
+
+def test_dynamicvit_triton():
+    print("Testing DynamicViT + Triton Ragged pipeline...")
+    from models.dynamicvit_ragged import build_dynamicvit_triton_model
+    from models.deit_base import get_dtype
+
+    model = build_dynamicvit_triton_model()
+    dtype = get_dtype()
+    images = torch.randn(2, 3, 224, 224, device=DEVICE, dtype=dtype)
+
+    logits = model(images, fixed_ratio=0.5)
+    assert logits.shape == (2, 1000), f"Expected (2, 1000), got {logits.shape}"
+    assert not torch.isnan(logits).any(), "Logits contain NaN!"
+    print(f"  ✓ Output shape: {logits.shape}")
+
+    del model
+    torch.cuda.empty_cache()
+
+
 if __name__ == "__main__":
     print("=" * 50)
     print("SMOKE TESTS")
@@ -130,6 +166,10 @@ if __name__ == "__main__":
     test_pytorch_pruned()
     print()
     test_full_pipeline()
+    print()
+    test_dynamicvit_pytorch()
+    print()
+    test_dynamicvit_triton()
 
     print()
     print("=" * 50)

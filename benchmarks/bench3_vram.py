@@ -40,7 +40,11 @@ def measure_vram(model_fn, batch_size):
 
 
 def run_benchmark_3():
-    results = {"batch_sizes": BATCH_SIZES, "unpruned": [], "pytorch_pruned": [], "triton_ragged": []}
+    results = {
+        "batch_sizes": BATCH_SIZES,
+        "unpruned": [], "pytorch_pruned": [], "triton_ragged": [],
+        "dynamicvit_pytorch": [], "dynamicvit_triton": [],
+    }
 
     # ── 1. Standard DeiT ─────────────────────────────────────────────
     print("=== Standard DeiT VRAM ===")
@@ -86,6 +90,36 @@ def run_benchmark_3():
         torch.cuda.empty_cache(); gc.collect()
     del model; torch.cuda.empty_cache(); gc.collect()
 
+    # ── 4. DynamicViT + PyTorch Padded ────────────────────────────────
+    print("\n=== DynamicViT + PyTorch Padded VRAM ===")
+    from baselines.dynamicvit_pytorch import build_dynamicvit_pytorch_model
+    model = build_dynamicvit_pytorch_model()
+    for bs in BATCH_SIZES:
+        try:
+            vram = measure_vram(lambda img: model(img, fixed_ratio=0.5), bs)
+            print(f"  BS={bs:3d}  → {vram:.1f} MB")
+        except torch.cuda.OutOfMemoryError:
+            vram = -1
+            print(f"  BS={bs:3d}  → OOM")
+        results["dynamicvit_pytorch"].append(round(vram, 1))
+        torch.cuda.empty_cache(); gc.collect()
+    del model; torch.cuda.empty_cache(); gc.collect()
+
+    # ── 5. DynamicViT + Triton Ragged ────────────────────────────────
+    print("\n=== DynamicViT + Triton Ragged VRAM ===")
+    from models.dynamicvit_ragged import build_dynamicvit_triton_model
+    model = build_dynamicvit_triton_model()
+    for bs in BATCH_SIZES:
+        try:
+            vram = measure_vram(lambda img: model(img, fixed_ratio=0.5), bs)
+            print(f"  BS={bs:3d}  → {vram:.1f} MB")
+        except torch.cuda.OutOfMemoryError:
+            vram = -1
+            print(f"  BS={bs:3d}  → OOM")
+        results["dynamicvit_triton"].append(round(vram, 1))
+        torch.cuda.empty_cache(); gc.collect()
+    del model; torch.cuda.empty_cache(); gc.collect()
+
     # ── Save ─────────────────────────────────────────────────────────
     os.makedirs("results", exist_ok=True)
     with open("results/bench3_vram.json", "w") as f:
@@ -102,13 +136,17 @@ def plot_benchmark_3(results=None):
 
     bs = results["batch_sizes"]
     # Filter out OOM entries (-1)
-    fig, ax = plt.subplots(figsize=(8, 5))
+    fig, ax = plt.subplots(figsize=(10, 6))
 
     for key, label, marker, color in [
         ("unpruned", "Standard DeiT", "o", None),
-        ("pytorch_pruned", "PyTorch Pruned (padded)", "s", None),
-        ("triton_ragged", "Triton Ragged (ours)", "D", "red"),
+        ("pytorch_pruned", "A-ViT PyTorch (padded)", "s", None),
+        ("triton_ragged", "A-ViT Triton Ragged (ours)", "D", "red"),
+        ("dynamicvit_pytorch", "DynamicViT PyTorch (padded)", "^", "purple"),
+        ("dynamicvit_triton", "DynamicViT Triton Ragged (ours)", "v", "orangered"),
     ]:
+        if key not in results or not results[key]:
+            continue
         vals = results[key]
         valid_bs = [b for b, v in zip(bs, vals) if v > 0]
         valid_v  = [v for v in vals if v > 0]

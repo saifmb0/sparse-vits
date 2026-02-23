@@ -45,6 +45,8 @@ def run_benchmark_2():
         "theoretical": [],
         "pytorch_pruned": [],
         "triton_ragged": [],
+        "dynamicvit_pytorch": [],
+        "dynamicvit_triton": [],
     }
 
     # ── Baseline latency (unpruned) ──────────────────────────────────
@@ -103,6 +105,38 @@ def run_benchmark_2():
         torch.cuda.empty_cache(); gc.collect()
     del model_tr; torch.cuda.empty_cache(); gc.collect()
 
+    # ── DynamicViT + PyTorch Padded ──────────────────────────────────
+    print("\n=== DynamicViT + PyTorch Padded ===")
+    from baselines.dynamicvit_pytorch import build_dynamicvit_pytorch_model
+    model_dp = build_dynamicvit_pytorch_model()
+    for ratio in PRUNE_RATIOS:
+        try:
+            lat = measure_latency(lambda img: model_dp(img, fixed_ratio=ratio), FIXED_BATCH)
+            speedup = base_latency / lat
+            print(f"  ratio={ratio:.1f}  lat={lat:.2f}ms  speedup={speedup:.2f}x")
+        except torch.cuda.OutOfMemoryError:
+            speedup = 0.0
+            print(f"  ratio={ratio:.1f}  OOM")
+        results["dynamicvit_pytorch"].append(round(speedup, 3))
+        torch.cuda.empty_cache(); gc.collect()
+    del model_dp; torch.cuda.empty_cache(); gc.collect()
+
+    # ── DynamicViT + Triton Ragged ───────────────────────────────────
+    print("\n=== DynamicViT + Triton Ragged ===")
+    from models.dynamicvit_ragged import build_dynamicvit_triton_model
+    model_dt = build_dynamicvit_triton_model()
+    for ratio in PRUNE_RATIOS:
+        try:
+            lat = measure_latency(lambda img: model_dt(img, fixed_ratio=ratio), FIXED_BATCH)
+            speedup = base_latency / lat
+            print(f"  ratio={ratio:.1f}  lat={lat:.2f}ms  speedup={speedup:.2f}x")
+        except torch.cuda.OutOfMemoryError:
+            speedup = 0.0
+            print(f"  ratio={ratio:.1f}  OOM")
+        results["dynamicvit_triton"].append(round(speedup, 3))
+        torch.cuda.empty_cache(); gc.collect()
+    del model_dt; torch.cuda.empty_cache(); gc.collect()
+
     # ── Save ─────────────────────────────────────────────────────────
     os.makedirs("results", exist_ok=True)
     with open("results/bench2_sparsity.json", "w") as f:
@@ -119,10 +153,14 @@ def plot_benchmark_2(results=None):
 
     ratios = [r * 100 for r in results["prune_ratios"]]  # as percent
 
-    fig, ax = plt.subplots(figsize=(8, 5))
-    ax.plot(ratios, results["theoretical"],   "k--", label="Theoretical (ideal)", linewidth=2, alpha=0.7)
-    ax.plot(ratios, results["pytorch_pruned"],"s-",  label="PyTorch Pruned (padded)", linewidth=2)
-    ax.plot(ratios, results["triton_ragged"], "D-",  label="Triton Ragged (ours)", linewidth=2, color="red")
+    fig, ax = plt.subplots(figsize=(10, 6))
+    ax.plot(ratios, results["theoretical"],    "k--", label="Theoretical (ideal)", linewidth=2, alpha=0.7)
+    ax.plot(ratios, results["pytorch_pruned"], "s-",  label="A-ViT PyTorch (padded)", linewidth=2)
+    ax.plot(ratios, results["triton_ragged"],  "D-",  label="A-ViT Triton Ragged (ours)", linewidth=2, color="red")
+    if "dynamicvit_pytorch" in results and results["dynamicvit_pytorch"]:
+        ax.plot(ratios, results["dynamicvit_pytorch"], "^--", label="DynamicViT PyTorch (padded)", linewidth=2, color="purple")
+    if "dynamicvit_triton" in results and results["dynamicvit_triton"]:
+        ax.plot(ratios, results["dynamicvit_triton"],  "v-",  label="DynamicViT Triton Ragged (ours)", linewidth=2, color="orangered")
 
     ax.axhline(y=1.0, color="gray", linestyle=":", alpha=0.5)
 
