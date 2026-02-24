@@ -27,6 +27,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from config import BATCH_SIZES, WARMUP_ITERS, BENCH_ITERS, DEVICE, IMG_SIZE, PRUNE_AFTER_LAYER
 from models.deit_base import load_deit, split_deit, get_dtype, DeiTFrontEnd, DeiTBackEnd
+from benchmarks.bench5_accuracy import get_imagenet_val
 from models.pruning import threshold_prune_mask, pytorch_gather_and_pad
 from kernels.pack_tokens import triton_pack_tokens
 from kernels.ragged_attention import triton_ragged_attention
@@ -124,9 +125,8 @@ def build_ragged(cfg: ModelConfig):
 # Measurement
 # ─────────────────────────────────────────────────────────────────────
 
-def measure_throughput(model_fn, batch_size, warmup=WARMUP_ITERS, iters=BENCH_ITERS):
-    dtype = get_dtype()
-    images = torch.randn(batch_size, 3, IMG_SIZE, IMG_SIZE, device=DEVICE, dtype=dtype)
+def measure_throughput(model_fn, images, warmup=WARMUP_ITERS, iters=BENCH_ITERS):
+    batch_size = images.shape[0]
 
     for _ in range(warmup):
         model_fn(images)
@@ -141,6 +141,12 @@ def measure_throughput(model_fn, batch_size, warmup=WARMUP_ITERS, iters=BENCH_IT
     return (batch_size * iters) / elapsed
 
 
+def build_imagenet_batch(val_data, batch_size):
+    """Build a fixed batch from streamed ImageNet tensors."""
+    batch = torch.stack([val_data[i][0] for i in range(batch_size)])
+    return batch.to(DEVICE)
+
+
 # ─────────────────────────────────────────────────────────────────────
 # Main benchmark loop
 # ─────────────────────────────────────────────────────────────────────
@@ -150,6 +156,9 @@ def run_benchmark_4():
         "batch_sizes": BATCH_SIZES,
         "models": {},
     }
+
+    max_samples = max(BATCH_SIZES)
+    val_data = get_imagenet_val(max_samples=max_samples)
 
     for cfg in SCALING_MODELS:
         print(f"\n{'='*60}")
@@ -164,7 +173,8 @@ def run_benchmark_4():
         model = build_unpruned(cfg)
         for bs in BATCH_SIZES:
             try:
-                tp = measure_throughput(lambda img: model(img), bs)
+                images = build_imagenet_batch(val_data, bs)
+                tp = measure_throughput(lambda img: model(img), images)
                 print(f"  BS={bs:3d}  → {tp:.1f} img/s")
             except torch.cuda.OutOfMemoryError:
                 tp = 0.0
@@ -178,7 +188,8 @@ def run_benchmark_4():
         model = build_padded(cfg)
         for bs in BATCH_SIZES:
             try:
-                tp = measure_throughput(lambda img: model(img, fixed_ratio=FIXED_RATIO), bs)
+                images = build_imagenet_batch(val_data, bs)
+                tp = measure_throughput(lambda img: model(img, fixed_ratio=FIXED_RATIO), images)
                 print(f"  BS={bs:3d}  → {tp:.1f} img/s")
             except torch.cuda.OutOfMemoryError:
                 tp = 0.0
@@ -192,7 +203,8 @@ def run_benchmark_4():
         model = build_ragged(cfg)
         for bs in BATCH_SIZES:
             try:
-                tp = measure_throughput(lambda img: model(img, fixed_ratio=FIXED_RATIO), bs)
+                images = build_imagenet_batch(val_data, bs)
+                tp = measure_throughput(lambda img: model(img, fixed_ratio=FIXED_RATIO), images)
                 print(f"  BS={bs:3d}  → {tp:.1f} img/s")
             except torch.cuda.OutOfMemoryError:
                 tp = 0.0

@@ -132,10 +132,8 @@ def verify_numerical_equivalence():
     print("EXPERIMENT A: Numerical Equivalence (Triton vs PyTorch)")
     print("=" * 60)
 
-    dtype = get_dtype()
-    # Use fixed seed images for reproducibility
-    torch.manual_seed(42)
-    images = torch.randn(4, 3, IMG_SIZE, IMG_SIZE, device=DEVICE, dtype=dtype)
+    val_data = get_imagenet_val(max_samples=4)
+    images = torch.stack([val_data[i][0] for i in range(4)]).to(DEVICE)
 
     results = {}
 

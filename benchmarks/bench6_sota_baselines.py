@@ -35,6 +35,7 @@ from config import (
     WARMUP_ITERS, BENCH_ITERS,
 )
 from models.deit_base import get_dtype
+from benchmarks.bench5_accuracy import get_imagenet_val
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -186,6 +187,12 @@ def benchmark_kernel(kernel_fn, q, k, v, cu_seqlens, max_len,
     return (elapsed / iters) * 1000.0  # ms
 
 
+def build_imagenet_batch(val_data, batch_size):
+    """Build a fixed batch from streamed ImageNet tensors."""
+    batch = torch.stack([val_data[i][0] for i in range(batch_size)])
+    return batch.to(DEVICE)
+
+
 # ─────────────────────────────────────────────────────────────────────
 # Experiment A: Kernel-level micro-benchmark
 # ─────────────────────────────────────────────────────────────────────
@@ -202,6 +209,10 @@ def run_kernel_microbenchmark():
     dtype = get_dtype()
     H, D = NUM_HEADS, HEAD_DIM
 
+    from models.deit_base import load_deit, split_deit
+    from models.pruning import threshold_prune_mask
+    from kernels.pack_tokens import triton_pack_tokens
+
     kernels = {
         "SDPA (math, padded)": attn_pytorch_math_padded,
         "SDPA (efficient, padded)": attn_pytorch_efficient_padded,
@@ -211,41 +222,46 @@ def run_kernel_microbenchmark():
 
     # Test at different batch sizes and sparsity levels
     configs = [
-        # (batch_size, avg_seq_len, description)
-        (4, 197, "BS=4, 0% pruned (full seq)"),
-        (4, 99, "BS=4, 50% pruned"),
-        (4, 40, "BS=4, 80% pruned"),
-        (16, 197, "BS=16, 0% pruned"),
-        (16, 99, "BS=16, 50% pruned"),
-        (16, 40, "BS=16, 80% pruned"),
-        (32, 197, "BS=32, 0% pruned"),
-        (32, 99, "BS=32, 50% pruned"),
-        (32, 40, "BS=32, 80% pruned"),
+        # (batch_size, prune_ratio, description)
+        (4, 0.0, "BS=4, 0% pruned"),
+        (4, 0.5, "BS=4, 50% pruned"),
+        (4, 0.8, "BS=4, 80% pruned"),
+        (16, 0.0, "BS=16, 0% pruned"),
+        (16, 0.5, "BS=16, 50% pruned"),
+        (16, 0.8, "BS=16, 80% pruned"),
+        (32, 0.0, "BS=32, 0% pruned"),
+        (32, 0.5, "BS=32, 50% pruned"),
+        (32, 0.8, "BS=32, 80% pruned"),
     ]
+
+    max_samples = max(bs for bs, _, _ in configs)
+    val_data = get_imagenet_val(max_samples=max_samples)
+
+    deit = load_deit()
+    front, early, late_seq, _ = split_deit(deit)
+    attn_block = list(late_seq)[0]
 
     results = {"configs": [], "kernels": {k: [] for k in kernels}}
 
-    for bs, avg_len, desc in configs:
+    for bs, ratio, desc in configs:
         print(f"\n--- {desc} ---")
         results["configs"].append(desc)
 
-        # Generate ragged lengths (±20% variation around avg_len)
-        torch.manual_seed(42)
-        variance = max(1, avg_len // 5)
-        lengths = torch.clamp(
-            torch.normal(float(avg_len), float(variance), (bs,)).int(),
-            min=10, max=197,
-        ).tolist()
-        Total = sum(lengths)
-        max_len = max(lengths)
+        images = build_imagenet_batch(val_data, bs)
+        with torch.inference_mode():
+            x = front(images)
+            x = early(x)
+            mask = threshold_prune_mask(x, fixed_ratio=ratio)
+            packed, cu_seqlens = triton_pack_tokens(x, mask)
 
-        cu_seqlens = torch.zeros(bs + 1, dtype=torch.int32, device=DEVICE)
-        for i, l in enumerate(lengths):
-            cu_seqlens[i + 1] = cu_seqlens[i] + l
+            x_norm = attn_block.norm1(packed)
+            qkv = attn_block.attn.qkv(x_norm).reshape(-1, 3, H, D)
+            q = qkv[:, 0].contiguous()
+            k = qkv[:, 1].contiguous()
+            v = qkv[:, 2].contiguous()
 
-        q = torch.randn(Total, H, D, device=DEVICE, dtype=dtype)
-        k = torch.randn(Total, H, D, device=DEVICE, dtype=dtype)
-        v = torch.randn(Total, H, D, device=DEVICE, dtype=dtype)
+        lengths = (cu_seqlens[1:] - cu_seqlens[:-1]).to(torch.int32)
+        max_len = int(lengths.max().item())
 
         for kname, kfn in kernels.items():
             try:
@@ -277,6 +293,8 @@ def run_pipeline_comparison():
     print("=" * 60)
 
     dtype = get_dtype()
+    max_samples = max(batch_sizes)
+    val_data = get_imagenet_val(max_samples=max_samples)
 
     from baselines.pytorch_pruned import build_pytorch_pruned_model
     from models.triton_ragged_deit import build_triton_ragged_model
@@ -289,7 +307,7 @@ def run_pipeline_comparison():
     model = build_pytorch_pruned_model()
     tp_list = []
     for bs in batch_sizes:
-        images = torch.randn(bs, 3, IMG_SIZE, IMG_SIZE, device=DEVICE, dtype=dtype)
+        images = build_imagenet_batch(val_data, bs)
         for _ in range(WARMUP_ITERS):
             model(images, fixed_ratio=0.5)
         torch.cuda.synchronize()
@@ -310,7 +328,7 @@ def run_pipeline_comparison():
     model = build_triton_ragged_model()
     tp_list = []
     for bs in batch_sizes:
-        images = torch.randn(bs, 3, IMG_SIZE, IMG_SIZE, device=DEVICE, dtype=dtype)
+        images = build_imagenet_batch(val_data, bs)
         for _ in range(WARMUP_ITERS):
             model(images, fixed_ratio=0.5)
         torch.cuda.synchronize()
@@ -425,7 +443,7 @@ def run_pipeline_comparison():
     model = NestedTensorPipeline().to(DEVICE, dtype=get_dtype()).eval()
     tp_list = []
     for bs in batch_sizes:
-        images = torch.randn(bs, 3, IMG_SIZE, IMG_SIZE, device=DEVICE, dtype=dtype)
+        images = build_imagenet_batch(val_data, bs)
         try:
             for _ in range(WARMUP_ITERS):
                 model(images, fixed_ratio=0.5)

@@ -16,15 +16,15 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from config import PRUNE_RATIOS, WARMUP_ITERS, BENCH_ITERS, DEVICE, IMG_SIZE
 from models.deit_base import load_deit, get_dtype
+from benchmarks.bench5_accuracy import get_imagenet_val
 
 
 FIXED_BATCH = 8  # fixed batch size for this benchmark
 
 
-def measure_latency(model_fn, batch_size, warmup=WARMUP_ITERS, iters=BENCH_ITERS):
+def measure_latency(model_fn, images, warmup=WARMUP_ITERS, iters=BENCH_ITERS):
     """Returns average latency in ms per batch."""
-    dtype = get_dtype()
-    images = torch.randn(batch_size, 3, IMG_SIZE, IMG_SIZE, device=DEVICE, dtype=dtype)
+    batch_size = images.shape[0]
 
     for _ in range(warmup):
         model_fn(images)
@@ -37,6 +37,12 @@ def measure_latency(model_fn, batch_size, warmup=WARMUP_ITERS, iters=BENCH_ITERS
     elapsed = time.perf_counter() - start
 
     return (elapsed / iters) * 1000  # ms
+
+
+def build_imagenet_batch(val_data, batch_size):
+    """Build a fixed batch from streamed ImageNet tensors."""
+    batch = torch.stack([val_data[i][0] for i in range(batch_size)])
+    return batch.to(DEVICE)
 
 
 def run_benchmark_2():
@@ -54,10 +60,13 @@ def run_benchmark_2():
         "tome_pytorch": [],
     }
 
+    val_data = get_imagenet_val(max_samples=FIXED_BATCH)
+    images = build_imagenet_batch(val_data, FIXED_BATCH)
+
     # ── Baseline latency (unpruned) ──────────────────────────────────
     print("=== Measuring unpruned baseline latency ===")
     model_base = load_deit()
-    base_latency = measure_latency(lambda img: model_base(img), FIXED_BATCH)
+    base_latency = measure_latency(lambda img: model_base(img), images)
     print(f"  Unpruned latency: {base_latency:.2f} ms")
     del model_base; torch.cuda.empty_cache(); gc.collect()
 
@@ -84,7 +93,7 @@ def run_benchmark_2():
     model_pt = build_pytorch_pruned_model()
     for ratio in PRUNE_RATIOS:
         try:
-            lat = measure_latency(lambda img: model_pt(img, fixed_ratio=ratio), FIXED_BATCH)
+            lat = measure_latency(lambda img: model_pt(img, fixed_ratio=ratio), images)
             speedup = base_latency / lat
             print(f"  ratio={ratio:.1f}  lat={lat:.2f}ms  speedup={speedup:.2f}x")
         except torch.cuda.OutOfMemoryError:
@@ -100,7 +109,7 @@ def run_benchmark_2():
     model_tr = build_triton_ragged_model()
     for ratio in PRUNE_RATIOS:
         try:
-            lat = measure_latency(lambda img: model_tr(img, fixed_ratio=ratio), FIXED_BATCH)
+            lat = measure_latency(lambda img: model_tr(img, fixed_ratio=ratio), images)
             speedup = base_latency / lat
             print(f"  ratio={ratio:.1f}  lat={lat:.2f}ms  speedup={speedup:.2f}x")
         except torch.cuda.OutOfMemoryError:
@@ -116,7 +125,7 @@ def run_benchmark_2():
     model_dp = build_dynamicvit_pytorch_model()
     for ratio in PRUNE_RATIOS:
         try:
-            lat = measure_latency(lambda img: model_dp(img, fixed_ratio=ratio), FIXED_BATCH)
+            lat = measure_latency(lambda img: model_dp(img, fixed_ratio=ratio), images)
             speedup = base_latency / lat
             print(f"  ratio={ratio:.1f}  lat={lat:.2f}ms  speedup={speedup:.2f}x")
         except torch.cuda.OutOfMemoryError:
@@ -132,7 +141,7 @@ def run_benchmark_2():
     model_dt = build_dynamicvit_triton_model()
     for ratio in PRUNE_RATIOS:
         try:
-            lat = measure_latency(lambda img: model_dt(img, fixed_ratio=ratio), FIXED_BATCH)
+            lat = measure_latency(lambda img: model_dt(img, fixed_ratio=ratio), images)
             speedup = base_latency / lat
             print(f"  ratio={ratio:.1f}  lat={lat:.2f}ms  speedup={speedup:.2f}x")
         except torch.cuda.OutOfMemoryError:
@@ -148,7 +157,7 @@ def run_benchmark_2():
     model_ep = build_evit_pytorch_model()
     for ratio in PRUNE_RATIOS:
         try:
-            lat = measure_latency(lambda img: model_ep(img, fixed_ratio=ratio), FIXED_BATCH)
+            lat = measure_latency(lambda img: model_ep(img, fixed_ratio=ratio), images)
             speedup = base_latency / lat
             print(f"  ratio={ratio:.1f}  lat={lat:.2f}ms  speedup={speedup:.2f}x")
         except torch.cuda.OutOfMemoryError:
@@ -164,7 +173,7 @@ def run_benchmark_2():
     model_et = build_evit_triton_model()
     for ratio in PRUNE_RATIOS:
         try:
-            lat = measure_latency(lambda img: model_et(img, fixed_ratio=ratio), FIXED_BATCH)
+            lat = measure_latency(lambda img: model_et(img, fixed_ratio=ratio), images)
             speedup = base_latency / lat
             print(f"  ratio={ratio:.1f}  lat={lat:.2f}ms  speedup={speedup:.2f}x")
         except torch.cuda.OutOfMemoryError:
@@ -179,7 +188,7 @@ def run_benchmark_2():
     model_ap = build_ats_pytorch_model()
     for ratio in PRUNE_RATIOS:
         try:
-            lat = measure_latency(lambda img: model_ap(img, fixed_ratio=ratio), FIXED_BATCH)
+            lat = measure_latency(lambda img: model_ap(img, fixed_ratio=ratio), images)
             speedup = base_latency / lat
             print(f"  ratio={ratio:.1f}  lat={lat:.2f}ms  speedup={speedup:.2f}x")
         except torch.cuda.OutOfMemoryError:
@@ -195,7 +204,7 @@ def run_benchmark_2():
     model_at = build_ats_triton_model()
     for ratio in PRUNE_RATIOS:
         try:
-            lat = measure_latency(lambda img: model_at(img, fixed_ratio=ratio), FIXED_BATCH)
+            lat = measure_latency(lambda img: model_at(img, fixed_ratio=ratio), images)
             speedup = base_latency / lat
             print(f"  ratio={ratio:.1f}  lat={lat:.2f}ms  speedup={speedup:.2f}x")
         except torch.cuda.OutOfMemoryError:
@@ -211,7 +220,7 @@ def run_benchmark_2():
     model_tm = build_tome_model()
     for ratio in PRUNE_RATIOS:
         try:
-            lat = measure_latency(lambda img: model_tm(img, fixed_ratio=ratio), FIXED_BATCH)
+            lat = measure_latency(lambda img: model_tm(img, fixed_ratio=ratio), images)
             speedup = base_latency / lat
             print(f"  ratio={ratio:.1f}  lat={lat:.2f}ms  speedup={speedup:.2f}x")
         except torch.cuda.OutOfMemoryError:

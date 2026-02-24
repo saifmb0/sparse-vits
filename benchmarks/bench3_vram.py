@@ -15,12 +15,11 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from config import BATCH_SIZES, DEVICE, IMG_SIZE
 from models.deit_base import load_deit, get_dtype
+from benchmarks.bench5_accuracy import get_imagenet_val
 
 
-def measure_vram(model_fn, batch_size):
+def measure_vram(model_fn, images):
     """Returns peak VRAM in MB."""
-    dtype = get_dtype()
-    images = torch.randn(batch_size, 3, IMG_SIZE, IMG_SIZE, device=DEVICE, dtype=dtype)
 
     torch.cuda.reset_peak_memory_stats()
     torch.cuda.synchronize()
@@ -39,6 +38,12 @@ def measure_vram(model_fn, batch_size):
     return peak
 
 
+def build_imagenet_batch(val_data, batch_size):
+    """Build a fixed batch from streamed ImageNet tensors."""
+    batch = torch.stack([val_data[i][0] for i in range(batch_size)])
+    return batch.to(DEVICE)
+
+
 def run_benchmark_3():
     results = {
         "batch_sizes": BATCH_SIZES,
@@ -49,12 +54,16 @@ def run_benchmark_3():
         "tome_pytorch": [],
     }
 
+    max_samples = max(BATCH_SIZES)
+    val_data = get_imagenet_val(max_samples=max_samples)
+
     # ── 1. Standard DeiT ─────────────────────────────────────────────
     print("=== Standard DeiT VRAM ===")
     model = load_deit()
     for bs in BATCH_SIZES:
+        images = build_imagenet_batch(val_data, bs)
         try:
-            vram = measure_vram(lambda img: model(img), bs)
+            vram = measure_vram(lambda img: model(img), images)
             print(f"  BS={bs:3d}  → {vram:.1f} MB")
         except torch.cuda.OutOfMemoryError:
             vram = -1
@@ -68,8 +77,9 @@ def run_benchmark_3():
     from baselines.pytorch_pruned import build_pytorch_pruned_model
     model = build_pytorch_pruned_model()
     for bs in BATCH_SIZES:
+        images = build_imagenet_batch(val_data, bs)
         try:
-            vram = measure_vram(lambda img: model(img, fixed_ratio=0.5), bs)
+            vram = measure_vram(lambda img: model(img, fixed_ratio=0.5), images)
             print(f"  BS={bs:3d}  → {vram:.1f} MB")
         except torch.cuda.OutOfMemoryError:
             vram = -1
@@ -83,8 +93,9 @@ def run_benchmark_3():
     from models.triton_ragged_deit import build_triton_ragged_model
     model = build_triton_ragged_model()
     for bs in BATCH_SIZES:
+        images = build_imagenet_batch(val_data, bs)
         try:
-            vram = measure_vram(lambda img: model(img, fixed_ratio=0.5), bs)
+            vram = measure_vram(lambda img: model(img, fixed_ratio=0.5), images)
             print(f"  BS={bs:3d}  → {vram:.1f} MB")
         except torch.cuda.OutOfMemoryError:
             vram = -1
@@ -98,8 +109,9 @@ def run_benchmark_3():
     from baselines.dynamicvit_pytorch import build_dynamicvit_pytorch_model
     model = build_dynamicvit_pytorch_model()
     for bs in BATCH_SIZES:
+        images = build_imagenet_batch(val_data, bs)
         try:
-            vram = measure_vram(lambda img: model(img, fixed_ratio=0.5), bs)
+            vram = measure_vram(lambda img: model(img, fixed_ratio=0.5), images)
             print(f"  BS={bs:3d}  → {vram:.1f} MB")
         except torch.cuda.OutOfMemoryError:
             vram = -1
@@ -113,8 +125,9 @@ def run_benchmark_3():
     from models.dynamicvit_ragged import build_dynamicvit_triton_model
     model = build_dynamicvit_triton_model()
     for bs in BATCH_SIZES:
+        images = build_imagenet_batch(val_data, bs)
         try:
-            vram = measure_vram(lambda img: model(img, fixed_ratio=0.5), bs)
+            vram = measure_vram(lambda img: model(img, fixed_ratio=0.5), images)
             print(f"  BS={bs:3d}  → {vram:.1f} MB")
         except torch.cuda.OutOfMemoryError:
             vram = -1
@@ -128,8 +141,9 @@ def run_benchmark_3():
     from baselines.evit_pytorch import build_evit_pytorch_model
     model = build_evit_pytorch_model()
     for bs in BATCH_SIZES:
+        images = build_imagenet_batch(val_data, bs)
         try:
-            vram = measure_vram(lambda img: model(img, fixed_ratio=0.5), bs)
+            vram = measure_vram(lambda img: model(img, fixed_ratio=0.5), images)
             print(f"  BS={bs:3d}  → {vram:.1f} MB")
         except torch.cuda.OutOfMemoryError:
             vram = -1
@@ -143,8 +157,9 @@ def run_benchmark_3():
     from models.evit_ragged import build_evit_triton_model
     model = build_evit_triton_model()
     for bs in BATCH_SIZES:
+        images = build_imagenet_batch(val_data, bs)
         try:
-            vram = measure_vram(lambda img: model(img, fixed_ratio=0.5), bs)
+            vram = measure_vram(lambda img: model(img, fixed_ratio=0.5), images)
             print(f"  BS={bs:3d}  → {vram:.1f} MB")
         except torch.cuda.OutOfMemoryError:
             vram = -1
@@ -157,8 +172,9 @@ def run_benchmark_3():
     from baselines.ats_pytorch import build_ats_pytorch_model
     model = build_ats_pytorch_model()
     for bs in BATCH_SIZES:
+        images = build_imagenet_batch(val_data, bs)
         try:
-            vram = measure_vram(lambda img: model(img, fixed_ratio=0.5), bs)
+            vram = measure_vram(lambda img: model(img, fixed_ratio=0.5), images)
             print(f"  BS={bs:3d}  → {vram:.1f} MB")
         except torch.cuda.OutOfMemoryError:
             vram = -1
@@ -172,8 +188,9 @@ def run_benchmark_3():
     from models.ats_ragged import build_ats_triton_model
     model = build_ats_triton_model()
     for bs in BATCH_SIZES:
+        images = build_imagenet_batch(val_data, bs)
         try:
-            vram = measure_vram(lambda img: model(img, fixed_ratio=0.5), bs)
+            vram = measure_vram(lambda img: model(img, fixed_ratio=0.5), images)
             print(f"  BS={bs:3d}  → {vram:.1f} MB")
         except torch.cuda.OutOfMemoryError:
             vram = -1
@@ -187,8 +204,9 @@ def run_benchmark_3():
     from baselines.tome_pytorch import build_tome_model
     model = build_tome_model()
     for bs in BATCH_SIZES:
+        images = build_imagenet_batch(val_data, bs)
         try:
-            vram = measure_vram(lambda img: model(img, fixed_ratio=0.5), bs)
+            vram = measure_vram(lambda img: model(img, fixed_ratio=0.5), images)
             print(f"  BS={bs:3d}  → {vram:.1f} MB")
         except torch.cuda.OutOfMemoryError:
             vram = -1
