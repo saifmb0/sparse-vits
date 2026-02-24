@@ -84,4 +84,4 @@ MODEL_REGISTRY = {
 }
 
 # Ordered list for scaling experiments (small → large)
-SCALING_MODELS = [DEIT_TINY, DEIT_SMALL, DEIT_BASE, DEIT3_LARGE]
+SCALING_MODELS = [DEIT_TINY, DEIT_SMALL, DEIT_BASE]

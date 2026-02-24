@@ -40,7 +40,12 @@ def load_deit(model_name: str | None = None):
 
 
 class DeiTFrontEnd(nn.Module):
-    """Patch embed → CLS token → position embed."""
+    """Patch embed → CLS token → position embed.
+
+    Handles both DeiT-I (pos_embed includes CLS slot, shape [1, 197, D])
+    and DeiT-III (no_embed_class=True, pos_embed is [1, 196, D] applied
+    to patches before CLS is prepended).
+    """
 
     def __init__(self, deit):
         super().__init__()
@@ -48,13 +53,24 @@ class DeiTFrontEnd(nn.Module):
         self.cls_token = deit.cls_token
         self.pos_embed = deit.pos_embed
         self.pos_drop = deit.pos_drop if hasattr(deit, "pos_drop") else nn.Identity()
+        # DeiT3 sets no_embed_class=True → pos_embed covers patches only
+        self.no_embed_class = getattr(deit, "no_embed_class", False)
 
     def forward(self, x):
         B = x.shape[0]
-        x = self.patch_embed(x)                          # [B, 196, 384]
-        cls = self.cls_token.expand(B, -1, -1)           # [B, 1, 384]
-        x = torch.cat([cls, x], dim=1)                   # [B, 197, 384]
-        x = x + self.pos_embed
+        x = self.patch_embed(x)                          # [B, 196, D]
+
+        if self.no_embed_class:
+            # DeiT3: add pos_embed to patches first, then prepend CLS
+            x = x + self.pos_embed                       # [B, 196, D]
+            cls = self.cls_token.expand(B, -1, -1)       # [B, 1, D]
+            x = torch.cat([cls, x], dim=1)               # [B, 197, D]
+        else:
+            # DeiT-I: prepend CLS first, then add pos_embed (covers CLS+patches)
+            cls = self.cls_token.expand(B, -1, -1)       # [B, 1, D]
+            x = torch.cat([cls, x], dim=1)               # [B, 197, D]
+            x = x + self.pos_embed                       # [B, 197, D]
+
         x = self.pos_drop(x)
         return x
 

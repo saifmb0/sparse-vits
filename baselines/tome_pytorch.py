@@ -56,9 +56,12 @@ def bipartite_soft_matching(
     B, N, C = metric.shape
 
     if r <= 0 or r >= N // 2:
-        # Nothing to merge — return identity
-        idx = torch.arange(N, device=metric.device).unsqueeze(0).expand(B, -1)
-        return idx, idx
+        # Nothing to merge — return identity-compatible values
+        dst_idx = torch.arange(0, N, 2, device=metric.device)
+        src_idx = torch.arange(1, N, 2, device=metric.device)
+        node_idx = torch.zeros(B, src_idx.shape[0], dtype=torch.long, device=metric.device)
+        edge_idx = torch.zeros(B, 0, dtype=torch.long, device=metric.device)
+        return dst_idx, src_idx, node_idx, edge_idx, 0
 
     # Normalize for cosine similarity
     metric = F.normalize(metric, dim=-1)
@@ -107,6 +110,10 @@ def merge_tokens(
     """
     B, N, D = x.shape
     n_src = src_idx.shape[0]
+
+    if r <= 0:
+        # Nothing to merge — return input unchanged
+        return x
 
     # Separate src and dst tokens
     dst_tokens = x[:, dst_idx]  # [B, n_dst, D]

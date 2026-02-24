@@ -1,0 +1,22 @@
+{
+  "numerical_equivalence": {
+    "Threshold-L2": {
+      "max_abs_diff": 0.001953,
+      "mean_abs_diff": 0.000317,
+      "predictions_match": true
+    },
+    "DynamicViT": {
+      "max_abs_diff": 0.006836,
+      "mean_abs_diff": 0.00039,
+      "predictions_match": true
+    },
+    "EViT": {
+      "max_abs_diff": 0.001953,
+      "mean_abs_diff": 0.000358,
+      "predictions_match": true
+    }
+  },
+  "pareto": {
+    "error": "Dataset 'ILSVRC/imagenet-1k' is a gated dataset on the Hub. You must be authenticated to access it."
+  }
+}

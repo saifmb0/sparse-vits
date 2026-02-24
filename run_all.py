@@ -47,10 +47,14 @@ def main():
         from benchmarks.bench2_sparsity  import plot_benchmark_2
         from benchmarks.bench3_vram      import plot_benchmark_3
         from benchmarks.bench4_model_scaling import plot_benchmark_4
+        from benchmarks.bench5_accuracy  import plot_benchmark_5
+        from benchmarks.bench6_sota_baselines import plot_benchmark_6
         if args.bench in (0, 1): plot_benchmark_1()
         if args.bench in (0, 2): plot_benchmark_2()
         if args.bench in (0, 3): plot_benchmark_3()
         if args.bench in (0, 4): plot_benchmark_4()
+        if args.bench in (0, 5): plot_benchmark_5()
+        if args.bench in (0, 6): plot_benchmark_6()
         return
 
     os.makedirs("results", exist_ok=True)
@@ -88,6 +92,24 @@ def main():
         print("=" * 60)
         from benchmarks.bench4_model_scaling import run_benchmark_4
         run_benchmark_4()
+
+    torch.cuda.empty_cache()
+
+    if args.bench in (0, 5):
+        print("\n" + "=" * 60)
+        print("BENCHMARK 5: Accuracy vs. Efficiency (Pareto Frontier)")
+        print("=" * 60)
+        from benchmarks.bench5_accuracy import run_benchmark_5
+        run_benchmark_5()
+
+    torch.cuda.empty_cache()
+
+    if args.bench in (0, 6):
+        print("\n" + "=" * 60)
+        print("BENCHMARK 6: SOTA Systems Baselines")
+        print("=" * 60)
+        from benchmarks.bench6_sota_baselines import run_benchmark_6
+        run_benchmark_6()
 
     print("\n" + "=" * 60)
     print("All benchmarks complete. Results saved to results/")
