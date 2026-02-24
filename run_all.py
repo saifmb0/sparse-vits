@@ -46,9 +46,11 @@ def main():
         from benchmarks.bench1_throughput import plot_benchmark_1
         from benchmarks.bench2_sparsity  import plot_benchmark_2
         from benchmarks.bench3_vram      import plot_benchmark_3
+        from benchmarks.bench4_model_scaling import plot_benchmark_4
         if args.bench in (0, 1): plot_benchmark_1()
         if args.bench in (0, 2): plot_benchmark_2()
         if args.bench in (0, 3): plot_benchmark_3()
+        if args.bench in (0, 4): plot_benchmark_4()
         return
 
     os.makedirs("results", exist_ok=True)
@@ -77,6 +79,15 @@ def main():
         print("=" * 60)
         from benchmarks.bench3_vram import run_benchmark_3
         run_benchmark_3()
+
+    torch.cuda.empty_cache()
+
+    if args.bench in (0, 4):
+        print("\n" + "=" * 60)
+        print("BENCHMARK 4: Model-Size Scaling (Tiny/Small/Base)")
+        print("=" * 60)
+        from benchmarks.bench4_model_scaling import run_benchmark_4
+        run_benchmark_4()
 
     print("\n" + "=" * 60)
     print("All benchmarks complete. Results saved to results/")
