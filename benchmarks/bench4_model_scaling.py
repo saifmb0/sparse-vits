@@ -38,6 +38,10 @@ from model_configs import SCALING_MODELS, ModelConfig
 
 FIXED_RATIO = 0.5   # prune 50% of tokens
 
+# T4-appropriate batch sizes (16 GB VRAM allows much larger batches)
+BATCH_SIZES_T4 = [32, 64, 128, 256, 512]
+IMAGENET_SAMPLES = 2000   # images to stream for this benchmark
+
 
 # ─────────────────────────────────────────────────────────────────────
 # Builder helpers — construct pipelines for *any* DeiT model
@@ -153,12 +157,11 @@ def build_imagenet_batch(val_data, batch_size):
 
 def run_benchmark_4():
     results = {
-        "batch_sizes": BATCH_SIZES,
+        "batch_sizes": BATCH_SIZES_T4,
         "models": {},
     }
 
-    max_samples = max(BATCH_SIZES)
-    val_data = get_imagenet_val(max_samples=max_samples)
+    val_data = get_imagenet_val(max_samples=IMAGENET_SAMPLES)
 
     for cfg in SCALING_MODELS:
         print(f"\n{'='*60}")
@@ -171,7 +174,7 @@ def run_benchmark_4():
         # ── 1. Unpruned ──────────────────────────────────────────
         print(f"\n--- {cfg.short_name} · Unpruned ---")
         model = build_unpruned(cfg)
-        for bs in BATCH_SIZES:
+        for bs in BATCH_SIZES_T4:
             try:
                 images = build_imagenet_batch(val_data, bs)
                 tp = measure_throughput(lambda img: model(img), images)
@@ -186,7 +189,7 @@ def run_benchmark_4():
         # ── 2. Padded ────────────────────────────────────────────
         print(f"\n--- {cfg.short_name} · Threshold-L2 + PyTorch Padded ---")
         model = build_padded(cfg)
-        for bs in BATCH_SIZES:
+        for bs in BATCH_SIZES_T4:
             try:
                 images = build_imagenet_batch(val_data, bs)
                 tp = measure_throughput(lambda img: model(img, fixed_ratio=FIXED_RATIO), images)
@@ -201,7 +204,7 @@ def run_benchmark_4():
         # ── 3. Triton Ragged ─────────────────────────────────────
         print(f"\n--- {cfg.short_name} · Threshold-L2 + Triton Ragged ---")
         model = build_ragged(cfg)
-        for bs in BATCH_SIZES:
+        for bs in BATCH_SIZES_T4:
             try:
                 images = build_imagenet_batch(val_data, bs)
                 tp = measure_throughput(lambda img: model(img, fixed_ratio=FIXED_RATIO), images)
@@ -276,11 +279,9 @@ def plot_benchmark_4(results=None):
     # ── Figure 2: Speedup summary bar chart (BS=32) ─────────────────
     fig2, ax2 = plt.subplots(figsize=(8, 5))
 
-    # Find BS=32 index (or last available)
-    try:
-        bs_idx = bs.index(32)
-    except ValueError:
-        bs_idx = len(bs) - 1
+    # Use the largest batch size available for the summary chart
+    # (showcases T4's 16 GB capacity; falls back gracefully on smaller GPUs)
+    bs_idx = len(bs) - 1
 
     x_pos = range(n_models)
     bar_width = 0.25
