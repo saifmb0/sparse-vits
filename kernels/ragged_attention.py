@@ -140,8 +140,8 @@ def triton_ragged_attention(
     k: torch.Tensor,          # [Total, num_heads, head_dim]
     v: torch.Tensor,          # [Total, num_heads, head_dim]
     cu_seqlens: torch.Tensor, # [B+1] int32
-    block_m: int = 32,        # query tile size  (must be power of 2, >= 16)
-    block_n: int = 32,        # key/value tile size (must be power of 2, >= 16)
+    block_m: int = 64,        # query tile size  (must be power of 2, >= 16)
+    block_n: int = 16,        # key/value tile size (must be power of 2, >= 16)
 ) -> torch.Tensor:
     """
     Computes bidirectional self-attention for a ragged batch.
