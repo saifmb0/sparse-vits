@@ -23,7 +23,7 @@ KEEP_CLS = True                              # always keep the CLS token
 BATCH_SIZES = [1, 4, 8, 16, 32]             # 64 may OOM on 4 GB
 PRUNE_RATIOS = [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
 WARMUP_ITERS = 10
-BENCH_ITERS = 50
+BENCH_ITERS = 300
 
 # ── Device ───────────────────────────────────────────────────────────────
 DEVICE = "cuda"
