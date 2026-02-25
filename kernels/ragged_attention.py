@@ -140,11 +140,24 @@ def triton_ragged_attention(
     k: torch.Tensor,          # [Total, num_heads, head_dim]
     v: torch.Tensor,          # [Total, num_heads, head_dim]
     cu_seqlens: torch.Tensor, # [B+1] int32
+    block_m: int = 32,        # query tile size  (must be power of 2, >= 16)
+    block_n: int = 32,        # key/value tile size (must be power of 2, >= 16)
 ) -> torch.Tensor:
     """
     Computes bidirectional self-attention for a ragged batch.
     Returns output: [Total, num_heads, head_dim]  fp16
+
+    Args:
+        q, k, v    : packed token tensors [Total, num_heads, head_dim]
+        cu_seqlens : cumulative sequence lengths [B+1] int32
+        block_m    : SRAM tile size for query dimension (constexpr at JIT compile)
+        block_n    : SRAM tile size for key/value dimension (constexpr at JIT compile)
     """
+    assert block_m & (block_m - 1) == 0 and block_m >= 16, \
+        f"block_m must be a power of 2 >= 16, got {block_m}"
+    assert block_n & (block_n - 1) == 0 and block_n >= 16, \
+        f"block_n must be a power of 2 >= 16, got {block_n}"
+
     Total, num_heads, head_dim = q.shape
     B = cu_seqlens.shape[0] - 1
 
@@ -154,9 +167,6 @@ def triton_ragged_attention(
     stride_tok  = q.stride(0)     # num_heads * head_dim
     stride_head = q.stride(1)     # head_dim
 
-    # Tile sizes — tuned for small seq_lens on GTX 1650
-    BLOCK_M = 32
-    BLOCK_N = 32
     BLOCK_D = triton.next_power_of_2(head_dim)
 
     grid = (B * num_heads,)
@@ -168,8 +178,8 @@ def triton_ragged_attention(
         head_dim=head_dim,
         stride_tok=stride_tok,
         stride_head=stride_head,
-        BLOCK_M=BLOCK_M,
-        BLOCK_N=BLOCK_N,
+        BLOCK_M=block_m,
+        BLOCK_N=block_n,
         BLOCK_D=BLOCK_D,
     )
 
