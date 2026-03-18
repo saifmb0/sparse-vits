@@ -150,7 +150,7 @@ python run_all.py --plot
 ## Hardware
 
 Developed and benchmarked on:
-- **GPU:** NVIDIA GTX 1650 (4 GB VRAM)
+- **GPU:** NVIDIA A100 (80 GB HBM2e, SM80)
 - **Precision:** FP16 throughout
 - **Model:** DeiT-Small (22M params, 384-dim, 6 heads, 12 layers)
 

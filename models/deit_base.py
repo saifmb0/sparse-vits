@@ -22,7 +22,11 @@ from config import (
 
 
 def get_dtype():
-    return torch.float16 if DTYPE == "float16" else torch.float32
+    if DTYPE == "float16":
+        return torch.float16
+    elif DTYPE == "bfloat16":
+        return torch.bfloat16
+    return torch.float32
 
 
 def load_deit(model_name: str | None = None):

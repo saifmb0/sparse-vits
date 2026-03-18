@@ -11,7 +11,7 @@
 \pgfplotsset{compat=1.18}
 
 \title{Accelerating Vision Transformers with Triton-based Ragged Attention}
-\author{Seifeldin Abdellatif, Yazeed Ghadi}
+\author{Seifeldin Abdellatif, Ahmad Almasri, Yazeed Ghadi}
 \date{\today}
 
 \begin{document}
@@ -19,7 +19,7 @@
 \maketitle
 
 \begin{abstract}
-Vision Transformers (ViTs) have achieved state-of-the-art performance across various computer vision tasks, but their quadratic attention complexity remains a significant computational bottleneck. Token pruning methods aim to alleviate this by dropping uninformative tokens. However, standard deep learning frameworks like PyTorch rely on padded execution, which fails to translate theoretical FLOP reductions into empirical speedups due to the overhead of padding and masking. In this paper, we introduce a Triton-based Ragged Attention mechanism that natively supports variable-length sequences without padding. Our approach achieves up to a 2.4$\times$ speedup at 90\% sparsity, closely tracking the theoretical ideal, while maintaining strict numerical equivalence with standard implementations. Furthermore, we demonstrate that our method significantly outperforms existing optimized kernels like FlashAttention-2, which incur excessive overhead for the relatively short sequence lengths typical of ViTs and lack support for older hardware architectures such as Turing.
+Vision Transformers (ViTs) have achieved state-of-the-art performance across various computer vision tasks, but their quadratic attention complexity remains a significant computational bottleneck. Token pruning methods aim to alleviate this by dropping uninformative tokens. However, standard deep learning frameworks like PyTorch rely on padded execution, which fails to translate theoretical FLOP reductions into empirical speedups due to the overhead of padding and masking. In this paper, we introduce a hardware-aware Triton-based Ragged Attention mechanism that natively supports variable-length sequences without padding. Our approach achieves up to a 2.4$\times$ speedup at 90\% sparsity, closely tracking the theoretical ideal, while maintaining strict numerical equivalence with standard implementations. Furthermore, we demonstrate that our method significantly outperforms existing optimized kernels like FlashAttention-2, which incur excessive overhead for the relatively short sequence lengths typical of ViTs and lack support for older hardware architectures such as Turing.
 \end{abstract}
 
 \section{Introduction}

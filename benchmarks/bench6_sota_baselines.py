@@ -2,20 +2,22 @@
 Benchmark 6: SOTA Systems Baselines — Attention Kernel Comparison
 ==================================================================
 Compares our Triton ragged attention kernel against the optimized
-attention implementations available in PyTorch:
+attention implementations available in PyTorch and external libraries:
 
-  1. PyTorch SDPA (math)     — naive matmul fallback with padding+mask
-  2. PyTorch SDPA (efficient) — memory-efficient attention with padding+mask
-  3. NestedTensor + SDPA     — PyTorch's native ragged attention
-  4. flex_attention (compiled) — torch.compile'd flexible attention
-  5. Our Triton Ragged       — custom cu_seqlens-guided kernel
+  1. PyTorch SDPA (math)       — naive matmul fallback with padding+mask
+  2. PyTorch SDPA (efficient)  — memory-efficient attention with padding+mask
+  3. PyTorch SDPA (flash)      — SDPA with FlashAttention backend (PRIMARY BASELINE)
+  4. NestedTensor + SDPA       — PyTorch's native ragged attention
+  5. FlashAttention-2 (varlen) — Tri Dao's FA2 with native cu_seqlens (SECONDARY BASELINE)
+  6. Our Triton Ragged         — custom cu_seqlens-guided kernel
 
 Two experiments:
   A) Kernel-level micro-benchmark (attention only, no MLP)
   B) End-to-end pipeline comparison (full pruned inference)
 
-NOTE: FlashAttention-2 (flash_attn package) requires sm80+.
-      This GPU (GTX 1650) is sm75, so we benchmark what's available.
+Requirements:
+  - A100 (SM80+) for PyTorch SDPA flash backend and FlashAttention-2
+  - pip install flash-attn --no-build-isolation
 
 Output: results/bench6_sota_baselines.json + .png
 """
@@ -125,6 +127,66 @@ def attn_pytorch_efficient_padded(q, k, v, cu_seqlens, max_len):
     return result
 
 
+def attn_sdpa_flash_padded(q, k, v, cu_seqlens, max_len):
+    """
+    PyTorch SDPA with FLASH_ATTENTION backend — primary baseline.
+    Requires SM80+ (A100/H100). Uses the same pad+unpad pattern.
+    """
+    B = cu_seqlens.shape[0] - 1
+    H, D = q.shape[1], q.shape[2]
+
+    q_pad = torch.zeros(B, max_len, H, D, device=q.device, dtype=q.dtype)
+    k_pad = torch.zeros_like(q_pad)
+    v_pad = torch.zeros_like(q_pad)
+    mask = torch.zeros(B, max_len, device=q.device, dtype=torch.bool)
+
+    for i in range(B):
+        s, e = cu_seqlens[i].item(), cu_seqlens[i + 1].item()
+        length = e - s
+        q_pad[i, :length] = q[s:e]
+        k_pad[i, :length] = k[s:e]
+        v_pad[i, :length] = v[s:e]
+        mask[i, :length] = True
+
+    q_pad = q_pad.transpose(1, 2)
+    k_pad = k_pad.transpose(1, 2)
+    v_pad = v_pad.transpose(1, 2)
+
+    attn_mask = torch.zeros(B, 1, 1, max_len, device=q.device, dtype=q.dtype)
+    attn_mask.masked_fill_(~mask.unsqueeze(1).unsqueeze(2), float("-inf"))
+
+    with torch.nn.attention.sdpa_kernel(torch.nn.attention.SDPBackend.FLASH_ATTENTION):
+        out = F.scaled_dot_product_attention(q_pad, k_pad, v_pad, attn_mask=attn_mask)
+
+    out = out.transpose(1, 2)
+    result = torch.zeros_like(q)
+    for i in range(B):
+        s, e = cu_seqlens[i].item(), cu_seqlens[i + 1].item()
+        length = e - s
+        result[s:e] = out[i, :length]
+
+    return result
+
+
+def attn_flash_attn2_varlen(q, k, v, cu_seqlens, max_len):
+    """
+    FlashAttention-2 via flash_attn.flash_attn_varlen_func — secondary baseline.
+    Operates directly on flat [Total, H, D] + cu_seqlens — native ragged support,
+    no padding needed.  Apples-to-apples comparison with our Triton kernel.
+    Requires SM80+ and: pip install flash-attn --no-build-isolation
+    """
+    from flash_attn import flash_attn_varlen_func
+    out = flash_attn_varlen_func(
+        q, k, v,
+        cu_seqlens_q=cu_seqlens,
+        cu_seqlens_k=cu_seqlens,
+        max_seqlen_q=max_len,
+        max_seqlen_k=max_len,
+        causal=False,
+    )
+    return out
+
+
 def attn_nested_tensor_sdpa(q, k, v, cu_seqlens, max_len):
     """
     PyTorch NestedTensor + SDPA — the framework-native ragged path.
@@ -216,6 +278,8 @@ def run_kernel_microbenchmark():
     kernels = {
         "SDPA (math, padded)": attn_pytorch_math_padded,
         "SDPA (efficient, padded)": attn_pytorch_efficient_padded,
+        "SDPA (flash, padded)": attn_sdpa_flash_padded,
+        "FlashAttention-2 (varlen)": attn_flash_attn2_varlen,
         "NestedTensor + SDPA": attn_nested_tensor_sdpa,
         "Triton Ragged (ours)": attn_triton_ragged,
     }
@@ -286,10 +350,11 @@ def run_pipeline_comparison():
     Compare full inference pipelines:
       1. Standard PyTorch padded (our existing baseline)
       2. NestedTensor SDPA pipeline (PyTorch-native ragged)
-      3. Our Triton ragged pipeline
+      3. FlashAttention-2 varlen pipeline (secondary baseline)
+      4. Our Triton ragged pipeline
     """
     print("\n" + "=" * 60)
-    print("EXPERIMENT B: End-to-End Pipeline Comparison (BS=32, 50% prune)")
+    print("EXPERIMENT B: End-to-End Pipeline Comparison")
     print("=" * 60)
 
 
@@ -297,7 +362,7 @@ def run_pipeline_comparison():
     from models.triton_ragged_deit import build_triton_ragged_model
 
     results = {"pipelines": {}}
-    batch_sizes = [1, 4, 8, 16, 32]
+    from config import BATCH_SIZES as batch_sizes
 
     dtype = get_dtype()
     max_samples = max(batch_sizes)
@@ -467,6 +532,117 @@ def run_pipeline_comparison():
     results["batch_sizes"] = batch_sizes
     del model; torch.cuda.empty_cache(); gc.collect()
 
+    # 4. FlashAttention-2 varlen pipeline
+    print("\n--- Threshold-L2 + FlashAttention-2 (varlen) Pipeline ---")
+    try:
+        from flash_attn import flash_attn_varlen_func
+
+        class FA2Block(nn.Module):
+            """Transformer block using FA2 varlen for attention."""
+            def __init__(self, block):
+                super().__init__()
+                self.norm1 = block.norm1
+                self.qkv_proj = block.attn.qkv
+                self.out_proj = block.attn.proj
+                self.proj_drop = block.attn.proj_drop
+                self.num_heads = block.attn.num_heads
+                self.head_dim = block.attn.head_dim
+                self.norm2 = block.norm2
+                self.mlp = block.mlp
+                self.ls1 = block.ls1 if hasattr(block, "ls1") else nn.Identity()
+                self.ls2 = block.ls2 if hasattr(block, "ls2") else nn.Identity()
+                self.drop_path1 = block.drop_path1 if hasattr(block, "drop_path1") else nn.Identity()
+                self.drop_path2 = block.drop_path2 if hasattr(block, "drop_path2") else nn.Identity()
+
+            def forward(self, x, cu_seqlens, max_seqlen):
+                Total, D = x.shape
+                H, d = self.num_heads, self.head_dim
+
+                residual = x
+                x_norm = self.norm1(x)
+                qkv = self.qkv_proj(x_norm).reshape(Total, 3, H, d)
+                q = qkv[:, 0].contiguous()
+                k = qkv[:, 1].contiguous()
+                v = qkv[:, 2].contiguous()
+
+                attn_out = flash_attn_varlen_func(
+                    q, k, v,
+                    cu_seqlens_q=cu_seqlens,
+                    cu_seqlens_k=cu_seqlens,
+                    max_seqlen_q=max_seqlen,
+                    max_seqlen_k=max_seqlen,
+                    causal=False,
+                )
+
+                attn_out = attn_out.reshape(Total, D)
+                attn_out = self.out_proj(attn_out)
+                attn_out = self.proj_drop(attn_out)
+
+                x = residual + self.drop_path1(self.ls1(attn_out))
+                x = x + self.drop_path2(self.ls2(self.mlp(self.norm2(x))))
+                return x
+
+        deit2 = load_deit()
+        front2, early2, late_seq2, back2 = split_deit(deit2)
+        late_blocks_list2 = list(late_seq2)
+
+        class FA2Pipeline(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.front = front2
+                self.early = early2
+                self.fa2_blocks = nn.ModuleList([FA2Block(b) for b in late_blocks_list2])
+                self.back_norm = back2.norm
+                self.back_head = back2.head
+
+            @torch.inference_mode()
+            def forward(self, images, fixed_ratio=None):
+                B = images.shape[0]
+                x = self.front(images)
+                x = self.early(x)
+
+                mask = threshold_prune_mask(x, fixed_ratio=fixed_ratio)
+                packed, cu_seqlens = triton_pack_tokens(x, mask)
+
+                lengths = (cu_seqlens[1:] - cu_seqlens[:-1]).to(torch.int32)
+                max_seqlen = int(lengths.max().item())
+
+                for block in self.fa2_blocks:
+                    packed = block(packed, cu_seqlens, max_seqlen)
+
+                cls_indices = cu_seqlens[:-1].long()
+                cls_tokens = packed[cls_indices]
+                cls_tokens = self.back_norm(cls_tokens)
+                return self.back_head(cls_tokens)
+
+        model = FA2Pipeline().to(DEVICE, dtype=get_dtype()).eval()
+        tp_list = []
+        for bs in batch_sizes:
+            images = build_imagenet_batch(val_data, bs)
+            try:
+                for _ in range(WARMUP_ITERS):
+                    model(images, fixed_ratio=0.5)
+                torch.cuda.synchronize()
+                start = time.perf_counter()
+                for _ in range(BENCH_ITERS):
+                    model(images, fixed_ratio=0.5)
+                torch.cuda.synchronize()
+                elapsed = time.perf_counter() - start
+                tp = (bs * BENCH_ITERS) / elapsed
+            except Exception as e:
+                tp = 0.0
+                print(f"  BS={bs:3d}  → FAILED: {e}")
+            tp_list.append(round(tp, 1))
+            if tp > 0:
+                print(f"  BS={bs:3d}  → {tp:.1f} img/s")
+            torch.cuda.empty_cache()
+        results["pipelines"]["FlashAttention-2 (varlen)"] = tp_list
+        del model; torch.cuda.empty_cache(); gc.collect()
+    except ImportError:
+        print("  ⚠ flash-attn not installed, skipping FA2 pipeline")
+    except Exception as e:
+        print(f"  ⚠ FA2 pipeline failed: {e}")
+
     return results
 
 
@@ -508,7 +684,7 @@ def plot_benchmark_6(results=None):
         bar_width = 0.8 / n_kernels
         x = range(n_configs)
 
-        colors = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728"]
+        colors = ["#1f77b4", "#ff7f0e", "#9467bd", "#e377c2", "#2ca02c", "#d62728"]
         for ki, kname in enumerate(kernel_names):
             vals = kernels[kname]
             # Replace -1 with 0 for display
@@ -546,9 +722,10 @@ def plot_benchmark_6(results=None):
         fig, ax = plt.subplots(figsize=(8, 5))
 
         styles = {
-            "PyTorch Padded (SDPA)": ("s--", "#d62728"),
-            "NestedTensor SDPA":     ("^-",  "#ff7f0e"),
-            "Triton Ragged (ours)":  ("D-",  "#2ca02c"),
+            "PyTorch Padded (SDPA)":       ("s--", "#d62728"),
+            "NestedTensor SDPA":           ("^-",  "#ff7f0e"),
+            "FlashAttention-2 (varlen)":   ("p-",  "#9467bd"),
+            "Triton Ragged (ours)":        ("D-",  "#2ca02c"),
         }
 
         for pname, vals in pipelines.items():
@@ -559,7 +736,7 @@ def plot_benchmark_6(results=None):
 
         ax.set_xlabel("Batch Size", fontsize=12)
         ax.set_ylabel("Throughput (img/s)", fontsize=12)
-        ax.set_title("End-to-End Pipeline: Padded vs NestedTensor vs Triton Ragged\n"
+        ax.set_title("End-to-End Pipeline: SDPA vs FA2 vs NestedTensor vs Triton Ragged\n"
                       "(Threshold-L2, 50% prune)",
                       fontsize=12, fontweight="bold")
         ax.legend(fontsize=10)

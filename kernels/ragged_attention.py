@@ -154,9 +154,9 @@ def triton_ragged_attention(
     stride_tok  = q.stride(0)     # num_heads * head_dim
     stride_head = q.stride(1)     # head_dim
 
-    # Tile sizes — tuned for small seq_lens on GTX 1650
+    # Tile sizes — tuned for A100 (SM80, 192 KB shared mem)
     BLOCK_M = 64
-    BLOCK_N = 16
+    BLOCK_N = 64
     BLOCK_D = triton.next_power_of_2(head_dim)
 
     grid = (B * num_heads,)

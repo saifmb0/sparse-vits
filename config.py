@@ -20,11 +20,11 @@ PRUNE_RATIO_HIGH = 0.70                      # max fraction of tokens to DROP
 KEEP_CLS = True                              # always keep the CLS token
 
 # ── Benchmarking ─────────────────────────────────────────────────────────
-BATCH_SIZES = [1, 4, 8, 16, 32]             # 64 may OOM on 4 GB
+BATCH_SIZES = [1, 4, 8, 16, 32, 64, 128]    # A100 80 GB can handle large batches
 PRUNE_RATIOS = [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
 WARMUP_ITERS = 10
-BENCH_ITERS = 300
+BENCH_ITERS = 500                            # higher count for stable timings on fast GPUs
 
 # ── Device ───────────────────────────────────────────────────────────────
 DEVICE = "cuda"
-DTYPE = "float16"                            # fp16 for GTX 1650
+DTYPE = "float16"                            # fp16 for A100
