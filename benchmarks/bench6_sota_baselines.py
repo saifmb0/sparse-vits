@@ -411,126 +411,126 @@ def run_pipeline_comparison():
     results["pipelines"]["Triton Ragged (ours)"] = tp_list
     del model; torch.cuda.empty_cache(); gc.collect()
 
-    # 3. NestedTensor SDPA Pipeline (build it here)
-    print("\n--- Threshold-L2 + NestedTensor SDPA Pipeline ---")
-    from models.deit_base import load_deit, split_deit
-    from models.pruning import threshold_prune_mask
-    from kernels.pack_tokens import triton_pack_tokens
+    # # 3. NestedTensor SDPA Pipeline (build it here)
+    # print("\n--- Threshold-L2 + NestedTensor SDPA Pipeline ---")
+    # from models.deit_base import load_deit, split_deit
+    # from models.pruning import threshold_prune_mask
+    # from kernels.pack_tokens import triton_pack_tokens
 
-    deit = load_deit()
-    front, early, late_seq, back = split_deit(deit)
-    late_blocks_list = list(late_seq)
+    # deit = load_deit()
+    # front, early, late_seq, back = split_deit(deit)
+    # late_blocks_list = list(late_seq)
 
-    class NestedTensorBlock(nn.Module):
-        """Transformer block using NestedTensor SDPA for attention."""
-        def __init__(self, block):
-            super().__init__()
-            self.norm1 = block.norm1
-            self.qkv_proj = block.attn.qkv
-            self.out_proj = block.attn.proj
-            self.attn_drop = block.attn.attn_drop
-            self.proj_drop = block.attn.proj_drop
-            self.num_heads = block.attn.num_heads
-            self.head_dim = block.attn.head_dim
-            self.norm2 = block.norm2
-            self.mlp = block.mlp
-            self.ls1 = block.ls1 if hasattr(block, "ls1") else nn.Identity()
-            self.ls2 = block.ls2 if hasattr(block, "ls2") else nn.Identity()
-            self.drop_path1 = block.drop_path1 if hasattr(block, "drop_path1") else nn.Identity()
-            self.drop_path2 = block.drop_path2 if hasattr(block, "drop_path2") else nn.Identity()
+    # class NestedTensorBlock(nn.Module):
+    #     """Transformer block using NestedTensor SDPA for attention."""
+    #     def __init__(self, block):
+    #         super().__init__()
+    #         self.norm1 = block.norm1
+    #         self.qkv_proj = block.attn.qkv
+    #         self.out_proj = block.attn.proj
+    #         self.attn_drop = block.attn.attn_drop
+    #         self.proj_drop = block.attn.proj_drop
+    #         self.num_heads = block.attn.num_heads
+    #         self.head_dim = block.attn.head_dim
+    #         self.norm2 = block.norm2
+    #         self.mlp = block.mlp
+    #         self.ls1 = block.ls1 if hasattr(block, "ls1") else nn.Identity()
+    #         self.ls2 = block.ls2 if hasattr(block, "ls2") else nn.Identity()
+    #         self.drop_path1 = block.drop_path1 if hasattr(block, "drop_path1") else nn.Identity()
+    #         self.drop_path2 = block.drop_path2 if hasattr(block, "drop_path2") else nn.Identity()
 
-        def forward(self, x, cu_seqlens):
-            Total, D = x.shape
-            H, d = self.num_heads, self.head_dim
-            B = cu_seqlens.shape[0] - 1
+    #     def forward(self, x, cu_seqlens):
+    #         Total, D = x.shape
+    #         H, d = self.num_heads, self.head_dim
+    #         B = cu_seqlens.shape[0] - 1
 
-            residual = x
-            x_norm = self.norm1(x)
-            qkv = self.qkv_proj(x_norm).reshape(Total, 3, H, d)
-            q = qkv[:, 0].contiguous()
-            k = qkv[:, 1].contiguous()
-            v = qkv[:, 2].contiguous()
+    #         residual = x
+    #         x_norm = self.norm1(x)
+    #         qkv = self.qkv_proj(x_norm).reshape(Total, 3, H, d)
+    #         q = qkv[:, 0].contiguous()
+    #         k = qkv[:, 1].contiguous()
+    #         v = qkv[:, 2].contiguous()
 
-            # Split into per-image tensors for NestedTensor
-            q_list = [q[cu_seqlens[i]:cu_seqlens[i+1]] for i in range(B)]
-            k_list = [k[cu_seqlens[i]:cu_seqlens[i+1]] for i in range(B)]
-            v_list = [v[cu_seqlens[i]:cu_seqlens[i+1]] for i in range(B)]
+    #         # Split into per-image tensors for NestedTensor
+    #         q_list = [q[cu_seqlens[i]:cu_seqlens[i+1]] for i in range(B)]
+    #         k_list = [k[cu_seqlens[i]:cu_seqlens[i+1]] for i in range(B)]
+    #         v_list = [v[cu_seqlens[i]:cu_seqlens[i+1]] for i in range(B)]
 
-            q_nt = torch.nested.nested_tensor(q_list, layout=torch.jagged)
-            k_nt = torch.nested.nested_tensor(k_list, layout=torch.jagged)
-            v_nt = torch.nested.nested_tensor(v_list, layout=torch.jagged)
+    #         q_nt = torch.nested.nested_tensor(q_list, layout=torch.jagged)
+    #         k_nt = torch.nested.nested_tensor(k_list, layout=torch.jagged)
+    #         v_nt = torch.nested.nested_tensor(v_list, layout=torch.jagged)
 
-            q_nt = q_nt.transpose(1, 2)
-            k_nt = k_nt.transpose(1, 2)
-            v_nt = v_nt.transpose(1, 2)
+    #         q_nt = q_nt.transpose(1, 2)
+    #         k_nt = k_nt.transpose(1, 2)
+    #         v_nt = v_nt.transpose(1, 2)
 
-            out_nt = F.scaled_dot_product_attention(q_nt, k_nt, v_nt)
-            out_nt = out_nt.transpose(1, 2)
+    #         out_nt = F.scaled_dot_product_attention(q_nt, k_nt, v_nt)
+    #         out_nt = out_nt.transpose(1, 2)
 
-            # Reassemble flat tensor
-            attn_out = torch.zeros(Total, H, d, device=x.device, dtype=x.dtype)
-            for i in range(B):
-                s, e = cu_seqlens[i].item(), cu_seqlens[i+1].item()
-                attn_out[s:e] = out_nt[i]
+    #         # Reassemble flat tensor
+    #         attn_out = torch.zeros(Total, H, d, device=x.device, dtype=x.dtype)
+    #         for i in range(B):
+    #             s, e = cu_seqlens[i].item(), cu_seqlens[i+1].item()
+    #             attn_out[s:e] = out_nt[i]
 
-            attn_out = attn_out.reshape(Total, D)
-            attn_out = self.out_proj(attn_out)
-            attn_out = self.proj_drop(attn_out)
+    #         attn_out = attn_out.reshape(Total, D)
+    #         attn_out = self.out_proj(attn_out)
+    #         attn_out = self.proj_drop(attn_out)
 
-            x = residual + self.drop_path1(self.ls1(attn_out))
-            x = x + self.drop_path2(self.ls2(self.mlp(self.norm2(x))))
-            return x
+    #         x = residual + self.drop_path1(self.ls1(attn_out))
+    #         x = x + self.drop_path2(self.ls2(self.mlp(self.norm2(x))))
+    #         return x
 
-    class NestedTensorPipeline(nn.Module):
-        def __init__(self):
-            super().__init__()
-            self.front = front
-            self.early = early
-            self.nt_blocks = nn.ModuleList([NestedTensorBlock(b) for b in late_blocks_list])
-            self.back_norm = back.norm
-            self.back_head = back.head
+    # class NestedTensorPipeline(nn.Module):
+    #     def __init__(self):
+    #         super().__init__()
+    #         self.front = front
+    #         self.early = early
+    #         self.nt_blocks = nn.ModuleList([NestedTensorBlock(b) for b in late_blocks_list])
+    #         self.back_norm = back.norm
+    #         self.back_head = back.head
 
-        @torch.inference_mode()
-        def forward(self, images, fixed_ratio=None):
-            B = images.shape[0]
-            x = self.front(images)
-            x = self.early(x)
+    #     @torch.inference_mode()
+    #     def forward(self, images, fixed_ratio=None):
+    #         B = images.shape[0]
+    #         x = self.front(images)
+    #         x = self.early(x)
 
-            mask = threshold_prune_mask(x, fixed_ratio=fixed_ratio)
-            packed, cu_seqlens = triton_pack_tokens(x, mask)
+    #         mask = threshold_prune_mask(x, fixed_ratio=fixed_ratio)
+    #         packed, cu_seqlens = triton_pack_tokens(x, mask)
 
-            for block in self.nt_blocks:
-                packed = block(packed, cu_seqlens)
+    #         for block in self.nt_blocks:
+    #             packed = block(packed, cu_seqlens)
 
-            cls_indices = cu_seqlens[:-1].long()
-            cls_tokens = packed[cls_indices]
-            cls_tokens = self.back_norm(cls_tokens)
-            return self.back_head(cls_tokens)
+    #         cls_indices = cu_seqlens[:-1].long()
+    #         cls_tokens = packed[cls_indices]
+    #         cls_tokens = self.back_norm(cls_tokens)
+    #         return self.back_head(cls_tokens)
 
-    model = NestedTensorPipeline().to(DEVICE, dtype=get_dtype()).eval()
-    tp_list = []
-    for bs in batch_sizes:
-        images = build_imagenet_batch(val_data, bs)
-        try:
-            for _ in range(WARMUP_ITERS):
-                model(images, fixed_ratio=0.5)
-            torch.cuda.synchronize()
-            start = time.perf_counter()
-            for _ in range(BENCH_ITERS):
-                model(images, fixed_ratio=0.5)
-            torch.cuda.synchronize()
-            elapsed = time.perf_counter() - start
-            tp = (bs * BENCH_ITERS) / elapsed
-        except Exception as e:
-            tp = 0.0
-            print(f"  BS={bs:3d}  → FAILED: {e}")
-        tp_list.append(round(tp, 1))
-        if tp > 0:
-            print(f"  BS={bs:3d}  → {tp:.1f} img/s")
-        torch.cuda.empty_cache()
-    results["pipelines"]["NestedTensor SDPA"] = tp_list
-    results["batch_sizes"] = batch_sizes
-    del model; torch.cuda.empty_cache(); gc.collect()
+    # model = NestedTensorPipeline().to(DEVICE, dtype=get_dtype()).eval()
+    # tp_list = []
+    # for bs in batch_sizes:
+    #     images = build_imagenet_batch(val_data, bs)
+    #     try:
+    #         for _ in range(WARMUP_ITERS):
+    #             model(images, fixed_ratio=0.5)
+    #         torch.cuda.synchronize()
+    #         start = time.perf_counter()
+    #         for _ in range(BENCH_ITERS):
+    #             model(images, fixed_ratio=0.5)
+    #         torch.cuda.synchronize()
+    #         elapsed = time.perf_counter() - start
+    #         tp = (bs * BENCH_ITERS) / elapsed
+    #     except Exception as e:
+    #         tp = 0.0
+    #         print(f"  BS={bs:3d}  → FAILED: {e}")
+    #     tp_list.append(round(tp, 1))
+    #     if tp > 0:
+    #         print(f"  BS={bs:3d}  → {tp:.1f} img/s")
+    #     torch.cuda.empty_cache()
+    # results["pipelines"]["NestedTensor SDPA"] = tp_list
+    # results["batch_sizes"] = batch_sizes
+    # del model; torch.cuda.empty_cache(); gc.collect()
 
     # 4. FlashAttention-2 varlen pipeline
     print("\n--- Threshold-L2 + FlashAttention-2 (varlen) Pipeline ---")
