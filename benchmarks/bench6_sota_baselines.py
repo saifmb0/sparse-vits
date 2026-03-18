@@ -152,11 +152,11 @@ def attn_sdpa_flash_padded(q, k, v, cu_seqlens, max_len):
     k_pad = k_pad.transpose(1, 2)
     v_pad = v_pad.transpose(1, 2)
 
-    attn_mask = torch.zeros(B, 1, 1, max_len, device=q.device, dtype=q.dtype)
-    attn_mask.masked_fill_(~mask.unsqueeze(1).unsqueeze(2), float("-inf"))
-
+    # FLASH_ATTENTION does not support arbitrary attention masks.
+    # We pass no mask; attention scores for valid tokens vs padding will be computed,
+    # but since we slice out the exact length afterwards, the padding doesn't affect valid lengths.
     with torch.nn.attention.sdpa_kernel(torch.nn.attention.SDPBackend.FLASH_ATTENTION):
-        out = F.scaled_dot_product_attention(q_pad, k_pad, v_pad, attn_mask=attn_mask)
+        out = F.scaled_dot_product_attention(q_pad, k_pad, v_pad)
 
     out = out.transpose(1, 2)
     result = torch.zeros_like(q)
