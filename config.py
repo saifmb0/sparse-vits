@@ -3,9 +3,9 @@ Global configuration for Ragged-Batch ViT Inference Engine.
 """
 
 # ── Model ────────────────────────────────────────────────────────────────
-MODEL_NAME = "deit_large_patch16_224"       # timm model id
-EMBED_DIM = 384                              # DeiT-Small hidden dim
-NUM_HEADS = 6                                # DeiT-Small attention heads
+MODEL_NAME = "deit_base_patch16_224"      # timm model id
+EMBED_DIM = 768                              # DeiT-Base hidden dim
+NUM_HEADS = 12                               # DeiT-Base attention heads
 HEAD_DIM = EMBED_DIM // NUM_HEADS            # 64
 NUM_PATCHES = 196                            # 14x14 patches
 SEQ_LEN = NUM_PATCHES + 1                   # +1 for CLS token (197)
