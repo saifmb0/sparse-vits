@@ -214,9 +214,8 @@ def run_kernel_microbenchmark():
     from kernels.pack_tokens import triton_pack_tokens
 
     kernels = {
-        "SDPA (math, padded)": attn_pytorch_math_padded,
-        "SDPA (efficient, padded)": attn_pytorch_efficient_padded,
-        "NestedTensor + SDPA": attn_nested_tensor_sdpa,
+        "PyTorch SDPA (Primary)": attn_pytorch_efficient_padded,
+        "NestedTensor (Secondary)": attn_nested_tensor_sdpa,
         "Triton Ragged (ours)": attn_triton_ragged,
     }
 
