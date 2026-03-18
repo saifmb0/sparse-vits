@@ -532,6 +532,12 @@ def run_pipeline_comparison():
     # results["batch_sizes"] = batch_sizes
     # del model; torch.cuda.empty_cache(); gc.collect()
 
+    # Ensure results map and imports are still available since NestedTensor is commented out
+    results["batch_sizes"] = batch_sizes
+    from models.deit_base import load_deit, split_deit
+    from models.pruning import threshold_prune_mask
+    from kernels.pack_tokens import triton_pack_tokens
+
     # 4. FlashAttention-2 varlen pipeline
     print("\n--- Threshold-L2 + FlashAttention-2 (varlen) Pipeline ---")
     try:
