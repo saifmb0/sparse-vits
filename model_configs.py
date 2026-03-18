@@ -141,7 +141,6 @@ MODEL_REGISTRY = {
     "vit_huge":    VIT_HUGE,
 }
 
-# Ordered list for scaling experiments (T4 16 GB — ViT-S → ViT-B → ViT-L)
-# ViT-H/14 is excluded: its head_dim=80 differs from the kernel default
-# of 64 and it changes seq_len, requiring separate BLOCK_D tuning.
-SCALING_MODELS = [VIT_SMALL, VIT_BASE, VIT_LARGE]
+# Ordered list for scaling experiments
+# Using DeiT-Tiny, DeiT-Small, and DeiT-Base instead of standard ViTs.
+SCALING_MODELS = [DEIT_TINY, DEIT_SMALL, DEIT_BASE]
