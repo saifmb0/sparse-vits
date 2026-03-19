@@ -291,7 +291,7 @@ def run_pipeline_comparison():
     print("EXPERIMENT B: End-to-End Pipeline Comparison (BS=32, 50% prune)")
     print("=" * 60)
 
-    batch_sizes = [1, 4, 8, 16, 32]
+    batch_sizes = [1, 4, 8, 16, 32, 64, 128, 256, 512]
     dtype = get_dtype()
     max_samples = max(batch_sizes)
     val_data = get_imagenet_val(max_samples=max_samples)
