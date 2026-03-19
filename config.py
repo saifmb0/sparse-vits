@@ -3,7 +3,7 @@ Global configuration for Ragged-Batch ViT Inference Engine.
 """
 
 # ── Model ────────────────────────────────────────────────────────────────
-MODEL_NAME = "deit_small_patch16_224"       # timm model id
+MODEL_NAME = "deit_large_patch16_224"       # timm model id
 EMBED_DIM = 384                              # DeiT-Small hidden dim
 NUM_HEADS = 6                                # DeiT-Small attention heads
 HEAD_DIM = EMBED_DIM // NUM_HEADS            # 64
@@ -20,7 +20,7 @@ PRUNE_RATIO_HIGH = 0.70                      # max fraction of tokens to DROP
 KEEP_CLS = True                              # always keep the CLS token
 
 # ── Benchmarking ─────────────────────────────────────────────────────────
-BATCH_SIZES = [1, 4, 8, 16, 32]             # 64 may OOM on 4 GB
+BATCH_SIZES = [1, 4, 8, 16, 32, 64, 128, 256, 512]
 PRUNE_RATIOS = [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
 WARMUP_ITERS = 10
 BENCH_ITERS = 50
