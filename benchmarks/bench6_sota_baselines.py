@@ -291,6 +291,7 @@ def run_pipeline_comparison():
     print("EXPERIMENT B: End-to-End Pipeline Comparison (BS=32, 50% prune)")
     print("=" * 60)
 
+    batch_sizes = [1, 4, 8, 16, 32]
     dtype = get_dtype()
     max_samples = max(batch_sizes)
     val_data = get_imagenet_val(max_samples=max_samples)
@@ -299,7 +300,6 @@ def run_pipeline_comparison():
     from models.triton_ragged_deit import build_triton_ragged_model
 
     results = {"pipelines": {}}
-    batch_sizes = [1, 4, 8, 16, 32]
 
     # 1. PyTorch Padded
     print("\n--- Threshold-L2 + PyTorch SDPA Padded ---")
