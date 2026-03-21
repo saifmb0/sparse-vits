@@ -200,7 +200,7 @@ def verify_numerical_equivalence():
 # Experiment B: Accuracy-Throughput Pareto
 # ─────────────────────────────────────────────────────────────────────
 
-def measure_throughput_at_ratio(model_fn, ratio, batch_size=32):
+def measure_throughput_at_ratio(model_fn, ratio, batch_size=256):
     """Measure throughput for a model at a specific prune ratio."""
     dtype = get_dtype()
     images = torch.randn(batch_size, 3, IMG_SIZE, IMG_SIZE, device=DEVICE, dtype=dtype)

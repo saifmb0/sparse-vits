@@ -278,7 +278,7 @@ def plot_benchmark_4(results=None):
 
     # Find BS=32 index (or last available)
     try:
-        bs_idx = bs.index(32)
+        bs_idx = bs.index(256)
     except ValueError:
         bs_idx = len(bs) - 1
 

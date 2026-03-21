@@ -19,7 +19,7 @@ from models.deit_base import load_deit, get_dtype
 from benchmarks.bench5_accuracy import get_imagenet_val
 
 
-FIXED_BATCH = 8  # fixed batch size for this benchmark
+FIXED_BATCH = 128  # fixed batch size for this benchmark
 
 
 def measure_latency(model_fn, images, warmup=WARMUP_ITERS, iters=BENCH_ITERS):
