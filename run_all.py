@@ -77,12 +77,12 @@ def main():
 
     torch.cuda.empty_cache()
 
-    if args.bench in (0, 3):
-        print("\n" + "=" * 60)
-        print("BENCHMARK 3: Peak VRAM Allocation")
-        print("=" * 60)
-        from benchmarks.bench3_vram import run_benchmark_3
-        run_benchmark_3()
+    # if args.bench in (0, 3):
+    #     print("\n" + "=" * 60)
+    #     print("BENCHMARK 3: Peak VRAM Allocation")
+    #     print("=" * 60)
+    #     from benchmarks.bench3_vram import run_benchmark_3
+    #     run_benchmark_3()
 
     torch.cuda.empty_cache()
 
