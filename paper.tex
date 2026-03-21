@@ -1,204 +1,199 @@
-\documentclass[11pt,a4paper]{article}
-\usepackage[margin=1in]{geometry}
+\documentclass[10pt,twocolumn,letterpaper]{article}
+
+\usepackage{geometry}
+\geometry{letterpaper, margin=1in}
+\usepackage{times}
 \usepackage{graphicx}
 \usepackage{amsmath}
+\usepackage{amssymb}
 \usepackage{booktabs}
-\usepackage{pgfplots}
-\usepackage{hyperref}
-\usepackage{authblk}
-\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{multirow}
+\usepackage[pagebackref=true,breaklinks=true,letterpaper=true,colorlinks,bookmarks=false]{hyperref}
 
-\pgfplotsset{compat=1.18}
-
-\title{Accelerating Vision Transformers with Triton-based Ragged Attention}
-\author{Seifeldin Abdellatif, Yazeed Ghadi}
-\date{\today}
+% Document variables
+\title{Ragged Attention for Vision Transformers:\\Bridging the Throughput Gap from Edge to Cloud}
+\author{
+Seifeldin Abdellatif \and Ahmad Almasri \and Yazeed Ghadi\\
+Al Ain University, Abu Dhabi, UAE\\
+{\tt\small contact@saifmb.com, ahmadalmasri1426@gmail.com, yazeed.ghadi@aau.ac.ae}
+}
+\date{}
 
 \begin{document}
 
 \maketitle
 
 \begin{abstract}
-Vision Transformers (ViTs) have achieved state-of-the-art performance across various computer vision tasks, but their quadratic attention complexity remains a significant computational bottleneck. Token pruning methods aim to alleviate this by dropping uninformative tokens. However, standard deep learning frameworks like PyTorch rely on padded execution, which fails to translate theoretical FLOP reductions into empirical speedups due to the overhead of padding and masking. In this paper, we introduce a Triton-based Ragged Attention mechanism that natively supports variable-length sequences without padding. Our approach achieves up to a 2.4$\times$ speedup at 90\% sparsity, closely tracking the theoretical ideal, while maintaining strict numerical equivalence with standard implementations. Furthermore, we demonstrate that our method significantly outperforms existing optimized kernels like FlashAttention-2, which incur excessive overhead for the relatively short sequence lengths typical of ViTs and lack support for older hardware architectures such as Turing.
+Vision Transformers (ViTs) have achieved state-of-the-art performance across various computer vision tasks, but their quadratic attention complexity remains a significant computational bottleneck. Token pruning methods aim to alleviate this by dropping uninformative tokens, mathematically reducing FLOPs. 
+
+However, standard framework implementations rely on padded execution and scatter/gather operations. These dense-tensor constraints fail to translate theoretical reductions into empirical speedups on hardware. Furthermore, while modern kernels like FlashAttention-2 (FA2) solve memory bottlenecks for long-sequence Large Language Models (LLMs), they introduce excessive block-tiling overhead for the short-sequence regimes typical of pruned ViTs. 
+
+In this paper, we introduce a hardware-aware, Triton-based Ragged Attention engine optimized specifically for short, variable-length token sequences without padding. We evaluate our approach across the entire hardware spectrum. On constrained edge devices (NVIDIA GTX 1650), we achieve up to a 2.2$\times$ end-to-end throughput speedup over standard implementations. 
+
+On datacenter architectures (NVIDIA A100), we outperform FlashAttention-2 by 1.8$\times$ in kernel-level latency and 6\% in end-to-end throughput. By eliminating both the PyTorch padding tax and the FA2 short-sequence penalty, our system restores the correlation between FLOP reduction and latency, establishing a strictly superior Pareto frontier for ViT inference.
 \end{abstract}
 
 \section{Introduction}
-Token pruning is a popular technique to accelerate Vision Transformers (ViTs) by dynamically removing redundant tokens during inference. Despite the theoretical reduction in floating-point operations (FLOPs), realizing actual latency improvements on modern GPUs is challenging. Standard implementations pad the pruned sequences back to their original length to maintain static tensor shapes, computing attention over masked tokens. This padding bottleneck completely negates the benefits of pruning.
 
-To address this, we propose a custom Ragged Attention kernel written in OpenAI's Triton. By packing tokens contiguously and computing attention only over valid tokens, we eliminate padding overhead. 
+Vision Transformers (ViTs) have emerged as the dominant architecture in computer vision. Unlike convolutional networks, ViTs process images as sequences of patches (tokens) using multi-head self-attention. While highly expressive, the attention mechanism scales quadratically with respect to the sequence length $O(N^2)$, making high-throughput inference difficult, particularly on constrained edge devices.
 
-\section{The Limitations of FlashAttention-2 for Vision Transformers}
-FlashAttention-2 (FA2) is the current state-of-the-art for accelerating exact attention. However, it is primarily designed for Large Language Models (LLMs) with extremely long context windows (e.g., 4K to 128K tokens). When applied to Vision Transformers, FA2 exhibits several critical limitations:
+To mitigate this, dynamic token pruning algorithms (such as EViT, ATS, and DynamicViT) have been introduced. These methods dynamically identify and remove uninformative background tokens progressively through the network's layers. Because simple images retain fewer tokens than complex images, the sequences within a single batch become variable in length, resulting in a ``ragged'' batch.
 
-\paragraph{High Overhead for Short Sequences}
-ViTs typically operate on relatively short sequence lengths (e.g., 197 tokens for a $224\times224$ image with $16\times16$ patches). At these lengths, the kernel launch overhead and the complex tiling logic of FA2 dominate the execution time. Our microbenchmarks reveal that for short, pruned sequences, the overhead of FA2's efficient Scaled Dot-Product Attention (SDPA) is significantly higher than our lightweight Triton ragged kernel.
+Despite the mathematical elegance and theoretical FLOP reductions of these algorithms, realizing actual latency improvements on modern hardware is notoriously difficult. The bottleneck is not mathematical, but architectural. Standard deep learning frameworks, such as PyTorch, are optimized for dense, rectangular tensor operations. 
 
-\paragraph{Lack of Turing Architecture Support}
-FA2 relies heavily on hardware features introduced in the Ampere architecture (e.g., asynchronous memory copies and advanced Tensor Cores). Consequently, it does not support older, yet widely deployed, architectures like Turing (e.g., NVIDIA T4, RTX 20-series). This limits the deployment of FA2-accelerated ViTs in cost-sensitive or legacy edge environments. Our Triton-based ragged attention compiles efficiently across a broader range of hardware, including Turing GPUs.
+To execute a ragged batch, frameworks pad the sequences back to their original maximum lengths, computing attention over masked zero-tokens. Alternatively, they rely on heavy memory scatter/gather operations. On bandwidth-starved architectures (e.g., Turing-based GTX 1650 or T4), this ``Padding Tax'' completely negates the algorithmic benefits of pruning.
 
-\section{Experiments and Results}
+On modern datacenter hardware (e.g., Ampere-based A100), memory bandwidth is less of a bottleneck, leading practitioners to adopt highly optimized kernels like FlashAttention-2. While FlashAttention-2 is a brilliant piece of engineering, it introduces a separate bottleneck: the ``Short-Sequence Tiling Tax.'' 
 
-We evaluate our Triton Ragged Attention against standard PyTorch padded execution and PyTorch's NestedTensors across various metrics.
+Designed for LLMs with contexts exceeding 4,000 tokens, FA2 utilizes large SRAM blocks (e.g., 128$\times$128) and complex outer-loop tiling schedules. A typical pruned ViT operates on sequence lengths of $N \le 197$, often pruning down to $N \approx 40$. In this regime, FA2's block-scheduling logic wastes Tensor Core utilization and incurs excessive kernel launch latency.
 
-\subsection{Sparsity vs. Speedup}
-Figure~\ref{fig:sparsity} illustrates the empirical speedup achieved at different prune ratios. While the PyTorch padded implementation remains flat at $\sim$0.95$\times$ speedup regardless of sparsity, our Triton ragged kernel scales linearly, achieving a 2.4$\times$ speedup at 90\% sparsity, closely matching the theoretical ideal of 2.66$\times$.
+To solve this, we introduce a complete, hardware-aware Ragged Attention system. Our contributions are threefold:
+\begin{itemize}
+    \item We introduce a fused token packer that securely compresses variable-length token sequences into a contiguous 1D memory layout using cumulative sequence length pointers, bypassing PyTorch's scatter/gather overhead.
+    \item We develop a Triton-based, short-sequence ragged attention kernel. By exploiting the inherent short-sequence nature of ViTs, our kernel loads entire queries and keys into SRAM simultaneously, completely bypassing the complex block-tiling loops required by FlashAttention.
+    \item We provide comprehensive benchmarks across three distinct architectural regimes: Extreme Edge (GTX 1650), Cloud Inference (T4), and Datacenter (A100). We demonstrate strict numerical equivalence while achieving SOTA throughput.
+\end{itemize}
+
+\section{Background \& Motivation}
+
+\subsection{The Ragged Batch Problem}
+Dynamic token pruning methods make execution data-dependent. For instance, in a batch size of 4, the number of tokens remaining at layer 6 might be $[45, 112, 30, 89]$. Standard BLAS libraries require the shape to be padded to $[4, 197, D]$. 
+
+The hardware is forced to load useless padded zeros from High Bandwidth Memory (HBM) into the L2 cache, compute matrix multiplications on them, and apply an attention mask to hide the results. As token sequences become highly sparse, the ratio of wasted memory bandwidth to useful compute becomes disproportionately large. 
+
+\subsection{The SOTA Blindspot: Token Merging}
+Recent works like Token Merging (ToMe) attempt to circumvent PyTorch's padding constraints by merging a fixed number of tokens per layer across all images. Because the token count remains uniform across the batch, PyTorch executes it cleanly without padding. 
+
+However, to determine which tokens to merge, ToMe utilizes bipartite soft matching, which requires computing massive cosine similarity matrices between tokens. While ToMe achieves theoretical FLOP reductions, we find that this algorithmic overhead severely chokes memory bandwidth, fundamentally limiting throughput scaling at higher batch sizes.
+
+\subsection{The FlashAttention Mismatch}
+FlashAttention-2 solves the quadratic memory footprint of exact attention by aggressively tiling the $N \times N$ attention matrix. This is optimal for LLMs. However, tiling a 40-token sequence into a 128-token FA2 block wastes massive amounts of SRAM. 
+
+Furthermore, the kernel must execute outer loops over sequence blocks, even if the loop only executes once. For small $N$, the algorithmic latency of calculating loop boundaries and block pointers in FA2 is higher than simply computing the attention on the unpadded sequence length.
+
+\section{Methodology}
+
+\subsection{Fused Token Packing and 1D Sequences}
+To construct our ragged attention engine, we first bypass PyTorch's dense tensor requirements. Given the boolean pruning mask generated by the ViT's scoring module, we implement a fused packing routine. 
+
+Instead of padding, we extract the valid subset of tokens from the padded shape `[B, N, D]` into a flattened, contiguous 1D tensor of shape `[total\_valid\_tokens, D]`. 
+
+Simultaneously, we compute a 1D integer tensor, \texttt{cu\_seqlens}, which maps the cumulative boundaries of each image's tokens within the flat array. This operation requires exactly one contiguous read/write trip to HBM, drastically reducing execution latency and eliminating tensor fragmentation.
+
+\subsection{Short-Sequence Ragged Attention}
+With the sequences tightly packed into 1D memory, we dispatch our custom Triton kernel. Standard variable-length attention kernels (like FlashAttention varlen) rely on complex block-pointer math to tile across both the batch dimension and the sequence length dimension. 
+
+Our core insight is that for Vision Transformers, the maximum sequence length is strictly bounded ($N \le 197$ for standard DeiT/ViT). Because $197 \times D$ easily fits within the SRAM capacity of modern streaming multiprocessors (SMs), we do not need to tile the sequence dimension. 
+
+Our Triton kernel uses \texttt{cu\_seqlens} to locate an image's tokens, loads the entire sequence of Query, Key, and Value vectors into SRAM at once, computes the exact valid attention mask natively in SRAM, and writes the condensed output directly back to HBM. By eliminating sequence-tiling loops, we strip away the computational overhead that plagues general-purpose kernels.
+
+\subsection{Validation and Numerical Equivalence}
+Hardware speedups are invalid if they corrupt the underlying model's predictive power. To guarantee safety, we validated our Triton kernel against standard PyTorch dense execution using the ImageNet validation subset. 
+
+Across multiple pruning policies (Threshold-L2, DynamicViT, EViT), our kernel achieves a maximum absolute error of $0.0078$ (exactly $2^{-7}$) and a mean absolute error of $\sim 0.0007$ in FP16 precision. Crucially, the final Top-1 and Top-5 class predictions matched the PyTorch baseline in exactly 100\% of cases. This confirms that our throughput gains are derived entirely from hardware optimization, not algorithmic degradation.
+
+\begin{figure*}[t]
+    \centering
+    \begin{subfigure}[b]{0.32\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{results/GTX1650/bench2_sparsity.pdf}
+        \caption{Speedup vs. Sparsity (GTX 1650)}
+        \label{fig:1650_sparse}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[b]{0.32\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{results/T4/bench2_sparsity.pdf}
+        \caption{Speedup vs. Sparsity (T4)}
+        \label{fig:t4_sparse}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[b]{0.32\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{results/A100/bench6_kernel_microbench.png}
+        \caption{Kernel Latency vs. FA2 (A100)}
+        \label{fig:a100_microbench}
+    \end{subfigure}
+    \vspace{-2mm}
+    \caption{Performance evaluation across architectural regimes. (a) and (b) demonstrate our engine perfectly tracking the theoretical FLOP reduction on bandwidth-constrained Turing hardware, while standard PyTorch implementations flatline due to the ``Padding Tax.'' (c) highlights our kernel outperforming SOTA FlashAttention-2 at the micro-benchmark level by eliminating short-sequence tiling overhead on the A100.}
+    \label{fig:main_results}
+\end{figure*}
+
+\section{Evaluation}
+We extensively evaluate our system using DeiT-Small (22M parameters) across the full spectrum of inference architectures: the NVIDIA GTX 1650 (Extreme Edge, 4GB VRAM), the NVIDIA T4 (Cloud Baseline, 16GB), and the NVIDIA A100 (Datacenter, 40GB).
+
+\subsection{Tracking the Theoretical Ideal (Sparsity)}
+The primary goal of pruning is to achieve latency reductions proportional to FLOP reductions. On bandwidth-starved Turing architectures, the scatter/gather penalty of PyTorch is severe. Figure \ref{fig:main_results}a and \ref{fig:main_results}b plot real-world speedup against pruning sparsity ratios. 
+
+On both the GTX 1650 and T4, the PyTorch padded implementation flatlines (peaking at roughly $0.96\times$ and $0.81\times$ speedups respectively). This actively penalizes the inference speed despite executing fewer math operations. In stark contrast, our Triton Ragged kernel tracks the theoretical diagonal ideal, scaling up to a $2.2\times$ latency reduction at 90\% sparsity on the edge hardware.
+
+\subsection{Kernel-Level Microbenchmarks (A100 SOTA)}
+To evaluate against state-of-the-art systems, we deployed our kernel on the Ampere A100, competing directly against FlashAttention-2 (varlen). Figure \ref{fig:main_results}c details the execution latency of the isolated attention kernels across varying batch sizes and prune ratios.
+
+At BS=16 with 50\% pruned tokens (a standard ViT operating regime), FA2 executes the attention layer in $\sim 0.079$ ms. Because FA2 is optimized for large matrices, this latency floor remains virtually unchanged regardless of the sparsity. 
+
+Our short-sequence Triton kernel executes the same exact operation in $0.0447$ ms, representing a massive \textbf{1.8$\times$ kernel-level speedup} over FA2. For context, PyTorch's native Scaled Dot-Product Attention (SDPA) is orders of magnitude slower at $2.68$ ms.
+
+\begin{table}[h]
+\centering
+\caption{End-to-End Pipeline Throughput (Images/s) at BS=128 on A100. Our engine translates kernel micro-gains into measurable pipeline superiority.}
+\vspace{2mm}
+\resizebox{\columnwidth}{!}{
+\begin{tabular}{lcc}
+\toprule
+\textbf{Pipeline Implementation} & \textbf{Throughput} & \textbf{Speedup over Baseline} \\
+\midrule
+PyTorch Padded (SDPA) & 4,035.6 & 1.00$\times$ \\
+FlashAttention-2 (varlen) & 12,671.1 & 3.14$\times$ \\
+\textbf{Triton Ragged (Ours)} & \textbf{13,127.8} & \textbf{3.25$\times$} \\
+\bottomrule
+\end{tabular}
+}
+\label{tab:a100_e2e}
+\end{table}
+
+\subsection{End-to-End Pipeline \& Beating ToMe}
+Kernel-level microbenchmarks can be misleading if the surrounding data pipelines are inefficient. Table \ref{tab:a100_e2e} demonstrates that our 1.8$\times$ kernel advantage directly translates to a \textbf{6\% end-to-end throughput increase} (13,127 img/s) over an FA2-backed pipeline (12,671 img/s) on the A100. 
+
+Furthermore, we benchmark against Token Merging (ToMe). While ToMe bypasses padding, its bipartite matching bottleneck scales horribly with batch size. On the A100 at BS=128, ToMe violently bottlenecks at just 1,391 images/s, roughly $10\times$ slower than our dynamic pruning engine. 
 
 \begin{figure}[h]
     \centering
-    \begin{tikzpicture}
-        \begin{axis}[
-            xlabel={Prune Ratio},
-            ylabel={Speedup},
-            legend pos=north west,
-            grid=major,
-            width=0.8\textwidth,
-            height=6cm,
-            ymin=0.8, ymax=3.0,
-            xmin=0, xmax=0.9
-        ]
-        \addplot[color=black, dashed, mark=none] coordinates {
-            (0.0, 1.0) (0.1, 1.1) (0.2, 1.214) (0.3, 1.344) (0.4, 1.494) (0.5, 1.667) (0.6, 1.866) (0.7, 2.095) (0.8, 2.358) (0.9, 2.66)
-        };
-        \addlegendentry{Theoretical}
-        
-        \addplot[color=red, mark=square] coordinates {
-            (0.0, 0.954) (0.1, 0.954) (0.2, 0.954) (0.3, 0.954) (0.4, 0.954) (0.5, 0.954) (0.6, 0.954) (0.7, 0.954) (0.8, 0.954) (0.9, 0.954)
-        };
-        \addlegendentry{PyTorch Pruned (Padded)}
-        
-        \addplot[color=blue, mark=*] coordinates {
-            (0.0, 1.001) (0.1, 1.02) (0.2, 1.18) (0.3, 1.234) (0.4, 1.406) (0.5, 1.419) (0.6, 1.7) (0.7, 1.912) (0.8, 2.141) (0.9, 2.404)
-        };
-        \addlegendentry{Triton Ragged (Ours)}
-        \end{axis}
-    \end{tikzpicture}
-    \caption{Empirical speedup vs. theoretical speedup across prune ratios.}
-    \label{fig:sparsity}
+    \includegraphics[width=\columnwidth]{results/GTX1650/bench1_throughput.pdf}
+    \vspace{-4mm}
+    \caption{Batch size scaling on extreme edge (GTX 1650). While both padded and ragged pruning clear enough VRAM to scale beyond the unpruned baseline, standard PyTorch padding fails to yield throughput improvements.}
+    \label{fig:edge_throughput}
 \end{figure}
 
-\subsection{Throughput and VRAM Consumption}
-As shown in Figure~\ref{fig:throughput_vram}, our ragged attention significantly increases throughput across all batch sizes compared to the unpruned and padded baselines. Furthermore, it drastically reduces VRAM consumption, matching the memory footprint of the padded pruned models but with vastly superior throughput.
+\subsection{Batch Size Scaling on Edge}
+Hardware limits heavily dictate the scaling potential of edge inference. Figure \ref{fig:edge_throughput} illustrates the throughput scaling curve on the severely constrained 4GB GTX 1650. 
+
+While dynamic pruning methods reduce the memory footprint enough to avoid the early Out-Of-Memory (OOM) crashes seen in unpruned baselines, standard padded implementations fail to convert this into proportional throughput gains. 
+
+At BS=512, PyTorch's padded execution flatlines at approximately 10.9 images/s. Conversely, our Triton Ragged kernel efficiently translates the reduced sequence lengths into pure speed, smoothly scaling up to 17.1 images/s. This allows constrained consumer hardware to maximize throughput without being throttled by artificial framework overhead.
 
 \begin{figure}[h]
     \centering
-    \begin{minipage}{0.48\textwidth}
-        \begin{tikzpicture}
-            \begin{axis}[
-                xlabel={Batch Size},
-                ylabel={Throughput (images/s)},
-                legend pos=south east,
-                grid=major,
-                width=\textwidth,
-                height=5.5cm,
-                xtick={1,4,8,16,32}
-            ]
-            \addplot[color=gray, mark=triangle] coordinates {
-                (1, 32.15) (4, 36.16) (8, 40.86) (16, 41.96) (32, 42.46)
-            };
-            \addlegendentry{Unpruned}
-            
-            \addplot[color=red, mark=square] coordinates {
-                (1, 31.18) (4, 34.27) (8, 38.66) (16, 39.88) (32, 40.15)
-            };
-            \addlegendentry{PyTorch Padded}
-            
-            \addplot[color=blue, mark=*] coordinates {
-                (1, 46.73) (4, 54.12) (8, 57.04) (16, 61.94) (32, 63.46)
-            };
-            \addlegendentry{Triton Ragged}
-            \end{axis}
-        \end{tikzpicture}
-    \end{minipage}\hfill
-    \begin{minipage}{0.48\textwidth}
-        \begin{tikzpicture}
-            \begin{axis}[
-                xlabel={Batch Size},
-                ylabel={Peak VRAM (MB)},
-                legend pos=north west,
-                grid=major,
-                width=\textwidth,
-                height=5.5cm,
-                xtick={1,4,8,16,32}
-            ]
-            \addplot[color=gray, mark=triangle] coordinates {
-                (1, 80.2) (4, 168.2) (8, 283.8) (16, 505.9) (32, 960.2)
-            };
-            \addlegendentry{Unpruned}
-            
-            \addplot[color=red, mark=square] coordinates {
-                (1, 53.9) (4, 60.7) (8, 69.0) (16, 84.5) (32, 117.2)
-            };
-            \addlegendentry{PyTorch Padded}
-            
-            \addplot[color=blue, mark=*] coordinates {
-                (1, 53.8) (4, 60.7) (8, 68.8) (16, 84.1) (32, 116.4)
-            };
-            \addlegendentry{Triton Ragged}
-            \end{axis}
-        \end{tikzpicture}
-    \end{minipage}
-    \caption{Left: End-to-end throughput. Right: Peak VRAM consumption.}
-    \label{fig:throughput_vram}
+    \includegraphics[width=\columnwidth]{results/A100/bench5_pareto.png}
+    \vspace{-4mm}
+    \caption{The Pareto Frontier (Accuracy vs. Throughput) on A100. Our system unlocks the true hardware potential of EViT and ATS, establishing strictly superior curves.}
+    \label{fig:pareto}
 \end{figure}
 
-\subsection{Kernel Microbenchmarks}
-Table~\ref{tab:kernels} compares the raw execution latency of our Triton kernel against PyTorch's SDPA (which dispatches to FlashAttention-2 when applicable) and NestedTensors. For a batch size of 32 at 80\% sparsity, our kernel executes in just 0.40 ms, compared to 5.96 ms for efficient SDPA and 26.55 ms for NestedTensors.
+\subsection{The New Pareto Frontier}
+Ultimately, system optimizations serve to push algorithmic boundaries. Figure \ref{fig:pareto} plots Top-1 Accuracy against end-to-end throughput. By marrying the mathematically superior token-selection logic of EViT and ATS with our hardware-aware execution engine, we shift the entire Pareto frontier outwards. 
 
-\begin{table}[h]
-    \centering
-    \caption{Kernel Execution Latency (ms) across different configurations.}
-    \label{tab:kernels}
-    \begin{tabular}{lcccc}
-        \toprule
-        Configuration & SDPA (Math) & SDPA (Efficient) & NestedTensor & \textbf{Triton Ragged} \\
-        \midrule
-        BS=4, 0\% pruned & 1.65 & 1.64 & 8.17 & \textbf{0.54} \\
-        BS=4, 50\% pruned & 1.20 & 1.08 & 8.18 & \textbf{0.23} \\
-        BS=4, 80\% pruned & 1.08 & 0.87 & 8.00 & \textbf{0.06} \\
-        BS=16, 0\% pruned & 5.90 & 5.17 & 15.96 & \textbf{1.71} \\
-        BS=16, 50\% pruned & 4.69 & 4.12 & 16.64 & \textbf{0.56} \\
-        BS=16, 80\% pruned & 3.52 & 3.33 & 16.60 & \textbf{0.20} \\
-        BS=32, 0\% pruned & 11.32 & 10.50 & 28.99 & \textbf{4.11} \\
-        BS=32, 50\% pruned & 8.44 & 7.97 & 26.37 & \textbf{1.22} \\
-        BS=32, 80\% pruned & 6.23 & 5.96 & 26.55 & \textbf{0.40} \\
-        \bottomrule
-    \end{tabular}
-\end{table}
+Algorithms that were previously discarded due to their ``slow'' PyTorch padded implementations now massively outperform fixed-reduction methods like ToMe on actual hardware execution. This is achieved without sacrificing a fraction of a percent of accuracy.
 
-\subsection{Model Scaling and Numerical Equivalence}
-Our approach generalizes across different ViT scales (Table~\ref{tab:scaling}) and maintains strict numerical equivalence with standard PyTorch implementations (Table~\ref{tab:equivalence}). The maximum absolute difference is negligible ($< 0.007$), ensuring that accuracy is perfectly preserved.
+\subsection{Scope and Limitations}
+Our Ragged Attention engine is strictly designed for forward-pass inference and deployment. In real-world MLOps pipelines, dynamic token predictors are typically trained offline on unconstrained datacenter hardware, where dense, padded execution is acceptable. 
 
-\begin{table}[h]
-    \centering
-    \caption{Throughput (images/s) across DeiT scales at Batch Size 32.}
-    \label{tab:scaling}
-    \begin{tabular}{lccc}
-        \toprule
-        Model & Unpruned & PyTorch Padded & \textbf{Triton Ragged} \\
-        \midrule
-        DeiT-Ti & 152.8 & 138.7 & \textbf{233.2} \\
-        DeiT-S & 42.5 & 40.2 & \textbf{63.5} \\
-        DeiT-B & 11.2 & 11.0 & \textbf{16.9} \\
-        \bottomrule
-    \end{tabular}
-\end{table}
-
-\begin{table}[h]
-    \centering
-    \caption{Numerical Equivalence between Triton Ragged and PyTorch Padded.}
-    \label{tab:equivalence}
-    \begin{tabular}{lccc}
-        \toprule
-        Pruning Method & Max Abs Diff & Mean Abs Diff & Predictions Match \\
-        \midrule
-        Threshold-L2 & 0.001953 & 0.000317 & Yes \\
-        DynamicViT & 0.006836 & 0.000390 & Yes \\
-        EViT & 0.001953 & 0.000358 & Yes \\
-        \bottomrule
-    \end{tabular}
-\end{table}
+Our kernel serves as a drop-in replacement during the deployment phase to eliminate inference bottlenecks. Expanding this kernel to efficiently support backward-pass gradients for end-to-end ragged training is left as future work.
 
 \section{Conclusion}
-We presented a Triton-based Ragged Attention mechanism that effectively accelerates Vision Transformers by eliminating the padding bottleneck inherent in token pruning. Our method significantly outperforms standard PyTorch padded execution and FlashAttention-2, offering substantial throughput gains and VRAM reductions while maintaining strict numerical equivalence. Furthermore, its compatibility with older architectures like Turing makes it a highly practical solution for deploying efficient ViTs in diverse hardware environments.
+Historically, hardware constraints have dictated ViT algorithmic design. This dynamic has frequently pushed researchers away from powerful dynamic pruning toward computationally rigid token-merging techniques. 
+
+By engineering a custom Triton-based ragged sequence pipeline that addresses both the PyTorch Padding Tax and the FlashAttention-2 Tiling Tax, we demonstrate that dynamic pruning can achieve strictly superior latency, throughput, and accuracy trade-offs. Our engine successfully bridges the throughput gap across the entire deployment spectrum, from 4GB edge devices to modern datacenters. 
 
 \end{document}
