@@ -183,36 +183,36 @@ def run_benchmark_2():
         torch.cuda.empty_cache(); gc.collect()
     del model_et; torch.cuda.empty_cache(); gc.collect()
     # ── ATS + PyTorch Padded ─────────────────────────────────────
-    print("\n=== ATS + PyTorch Padded ===")
-    from baselines.ats_pytorch import build_ats_pytorch_model
-    model_ap = build_ats_pytorch_model()
-    for ratio in PRUNE_RATIOS:
-        try:
-            lat = measure_latency(lambda img: model_ap(img, fixed_ratio=ratio), images)
-            speedup = base_latency / lat
-            print(f"  ratio={ratio:.1f}  lat={lat:.2f}ms  speedup={speedup:.2f}x")
-        except torch.cuda.OutOfMemoryError:
-            speedup = 0.0
-            print(f"  ratio={ratio:.1f}  OOM")
-        results["ats_pytorch"].append(round(speedup, 3))
-        torch.cuda.empty_cache(); gc.collect()
-    del model_ap; torch.cuda.empty_cache(); gc.collect()
+    # print("\n=== ATS + PyTorch Padded ===")
+    # from baselines.ats_pytorch import build_ats_pytorch_model
+    # model_ap = build_ats_pytorch_model()
+    # for ratio in PRUNE_RATIOS:
+    #     try:
+    #         lat = measure_latency(lambda img: model_ap(img, fixed_ratio=ratio), images)
+    #         speedup = base_latency / lat
+    #         print(f"  ratio={ratio:.1f}  lat={lat:.2f}ms  speedup={speedup:.2f}x")
+    #     except torch.cuda.OutOfMemoryError:
+    #         speedup = 0.0
+    #         print(f"  ratio={ratio:.1f}  OOM")
+    #     results["ats_pytorch"].append(round(speedup, 3))
+    #     torch.cuda.empty_cache(); gc.collect()
+    # del model_ap; torch.cuda.empty_cache(); gc.collect()
 
-    # ── ATS + Triton Ragged ─────────────────────────────────────
-    print("\n=== ATS + Triton Ragged ===")
-    from models.ats_ragged import build_ats_triton_model
-    model_at = build_ats_triton_model()
-    for ratio in PRUNE_RATIOS:
-        try:
-            lat = measure_latency(lambda img: model_at(img, fixed_ratio=ratio), images)
-            speedup = base_latency / lat
-            print(f"  ratio={ratio:.1f}  lat={lat:.2f}ms  speedup={speedup:.2f}x")
-        except torch.cuda.OutOfMemoryError:
-            speedup = 0.0
-            print(f"  ratio={ratio:.1f}  OOM")
-        results["ats_triton"].append(round(speedup, 3))
-        torch.cuda.empty_cache(); gc.collect()
-    del model_at; torch.cuda.empty_cache(); gc.collect()
+    # # ── ATS + Triton Ragged ─────────────────────────────────────
+    # print("\n=== ATS + Triton Ragged ===")
+    # from models.ats_ragged import build_ats_triton_model
+    # model_at = build_ats_triton_model()
+    # for ratio in PRUNE_RATIOS:
+    #     try:
+    #         lat = measure_latency(lambda img: model_at(img, fixed_ratio=ratio), images)
+    #         speedup = base_latency / lat
+    #         print(f"  ratio={ratio:.1f}  lat={lat:.2f}ms  speedup={speedup:.2f}x")
+    #     except torch.cuda.OutOfMemoryError:
+    #         speedup = 0.0
+    #         print(f"  ratio={ratio:.1f}  OOM")
+    #     results["ats_triton"].append(round(speedup, 3))
+    #     torch.cuda.empty_cache(); gc.collect()
+    # del model_at; torch.cuda.empty_cache(); gc.collect()
 
     # ── ToMe (PyTorch only) ──────────────────────────────────────────
     print("\n=== ToMe · PyTorch ===")
