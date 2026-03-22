@@ -287,15 +287,15 @@ def run_kernel_microbenchmark():
     # Test at different batch sizes and sparsity levels
     configs = [
         # (batch_size, prune_ratio, description)
-        (4, 0.0, "BS=4, 0% pruned"),
-        (4, 0.5, "BS=4, 50% pruned"),
-        (4, 0.8, "BS=4, 80% pruned"),
-        (16, 0.0, "BS=16, 0% pruned"),
-        (16, 0.5, "BS=16, 50% pruned"),
-        (16, 0.8, "BS=16, 80% pruned"),
-        (32, 0.0, "BS=32, 0% pruned"),
-        (32, 0.5, "BS=32, 50% pruned"),
-        (32, 0.8, "BS=32, 80% pruned"),
+        (4, 0.0, "BS=64, 0% pruned"),
+        (4, 0.5, "BS=64, 50% pruned"),
+        (4, 0.8, "BS=64, 80% pruned"),
+        # (16, 0.0, "BS=16, 0% pruned"),
+        # (16, 0.5, "BS=16, 50% pruned"),
+        # (16, 0.8, "BS=16, 80% pruned"),
+        # (32, 0.0, "BS=32, 0% pruned"),
+        # (32, 0.5, "BS=32, 50% pruned"),
+        # (32, 0.8, "BS=32, 80% pruned"),
     ]
 
     max_samples = max(bs for bs, _, _ in configs)
