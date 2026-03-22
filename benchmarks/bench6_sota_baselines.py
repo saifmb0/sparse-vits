@@ -280,7 +280,7 @@ def run_kernel_microbenchmark():
         "SDPA (efficient, padded)": attn_pytorch_efficient_padded,
         "SDPA (flash, padded)": attn_sdpa_flash_padded,
         "FlashAttention-2 (varlen)": attn_flash_attn2_varlen,
-        "NestedTensor + SDPA": attn_nested_tensor_sdpa,
+        # "NestedTensor + SDPA": attn_nested_tensor_sdpa,
         "Triton Ragged (ours)": attn_triton_ragged,
     }
 
@@ -290,12 +290,15 @@ def run_kernel_microbenchmark():
         (4, 0.0, "BS=64, 0% pruned"),
         (4, 0.5, "BS=64, 50% pruned"),
         (4, 0.8, "BS=64, 80% pruned"),
-        # (16, 0.0, "BS=16, 0% pruned"),
-        # (16, 0.5, "BS=16, 50% pruned"),
-        # (16, 0.8, "BS=16, 80% pruned"),
-        # (32, 0.0, "BS=32, 0% pruned"),
-        # (32, 0.5, "BS=32, 50% pruned"),
-        # (32, 0.8, "BS=32, 80% pruned"),
+        (16, 0.0, "BS=16, 0% pruned"),
+        (16, 0.5, "BS=16, 50% pruned"),
+        (16, 0.8, "BS=16, 80% pruned"),
+        (32, 0.0, "BS=32, 0% pruned"),
+        (32, 0.5, "BS=32, 50% pruned"),
+        (32, 0.8, "BS=32, 80% pruned"),
+        (64, 0.0, "BS=64, 0% pruned"),
+        (64, 0.5, "BS=64, 50% pruned"),
+        (64, 0.8, "BS=64, 80% pruned"),
     ]
 
     max_samples = max(bs for bs, _, _ in configs)
