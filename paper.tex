@@ -28,7 +28,7 @@
 \usepackage{algorithm}
 \usepackage{algpseudocode}
 \usepackage{authblk}
-
+\usepackage{orcidlink}
 \hypersetup{colorlinks,linkcolor=blue!60!black,citecolor=green!50!black,urlcolor=blue!70!black}
 
 \newcommand{\ie}{\textit{i.e.}\@\xspace}
@@ -40,13 +40,11 @@
 
 % ── title ────────────────────────────────────────────────────────────────
 \title{%
-  Dispatch-Aware Ragged Attention for Pruned Vision Transformers:\\
-  Why Token Pruning Fails to Accelerate Attention in Practice%
+  Dispatch-Aware Ragged Attention for Pruned Vision Transformers
 }
 
-\author[1]{Seifeldin Abdellatif}
-\author[1]{Tarik Elamsy}
-\affil[1]{Al Ain University}
+\author{Saif Mahmoud \orcidlink{0009-0004-8879-9335}}
+\affil{Al Ain University}
 
 \date{}
 
@@ -190,7 +188,7 @@ work that specifically exploits Triton's lower dispatch overhead as
 a design advantage for short-sequence workloads.
 
 % =====================================================================
-\section{The Dispatch-Overhead Bottleneck}\label{sec:dispatch}
+\section{The Dispatch Overhead}\label{sec:dispatch}
 % =====================================================================
 
 We first quantify the phenomenon that motivates our work.
@@ -709,7 +707,7 @@ against ragged execution rather than padded baselines.
 \medskip
 \noindent\textbf{Code availability.}\;All kernels, benchmarks, and
 result data are available at
-\url{https://github.com/anonymous/sparse-vits}.
+\url{https://github.com/saifmb0/sparse-vits}.
 
 % =====================================================================
 %  REFERENCES
