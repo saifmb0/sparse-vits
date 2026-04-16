@@ -2,11 +2,9 @@
 %  Dispatch-Aware Ragged Attention for Pruned Vision Transformers
 %  Conference-style (CVPR / ECCV single-column, 8-page body + refs)
 % ──────────────────────────────────────────────────────────────────────────
-\documentclass[10pt,twocolumn,letterpaper]{article}
+\documentclass[conference]{IEEEtran}
 
 % ── geometry & fonts ─────────────────────────────────────────────────────
-\usepackage[margin=1in]{geometry}
-\usepackage{times}
 \usepackage{microtype}
 
 % ── math & tables ────────────────────────────────────────────────────────
@@ -27,7 +25,6 @@
 \usepackage{enumitem}
 \usepackage{algorithm}
 \usepackage{algpseudocode}
-\usepackage{authblk}
 \usepackage{orcidlink}
 \hypersetup{colorlinks,linkcolor=blue!60!black,citecolor=green!50!black,urlcolor=blue!70!black}
 
@@ -37,16 +34,24 @@
 \newcommand{\us}{\,\mu\text{s}}
 \newcommand{\cmark}{\ding{51}}
 \usepackage{pifont}
+\usepackage{makecell}
 
 % ── title ────────────────────────────────────────────────────────────────
 \title{%
   Dispatch-Aware Ragged Attention for Pruned Vision Transformers
 }
 
-\author{Saif Mahmoud \orcidlink{0009-0004-8879-9335}}
-\affil{Al Ain University}
-
-\date{}
+\author{\IEEEauthorblockN{Saif Mahmoud \orcidlink{0009-0004-8879-9335}}
+\IEEEauthorblockA{\textit{College of Engineering} \\
+\textit{Al Ain University}\\
+Abu Dhabi, United Arab Emirates \\
+contact@saifmb.com}
+\and
+\IEEEauthorblockN{Ahmad Almasri}
+\IEEEauthorblockA{\textit{College of Engineering} \\
+\textit{Al Ain University}\\
+Abu Dhabi, United Arab Emirates \\
+202310858@aau.ac.ae}}
 
 \begin{document}
 \maketitle
@@ -112,11 +117,7 @@ FlashAttention-2~\cite{dao2023flashattention2} provides such an API
 (\texttt{flash\_attn\_varlen\_func}), and PyTorch's NestedTensor
 path~\cite{pytorch2024nestedtensor} offers a framework-native
 alternative.
-One would expect these to fully realize the FLOP reduction from
-pruning.
-
 \paragraph{Our Observation.}
-They do not.
 We measure that at 80\% token pruning on DeiT-Base (reducing
 per-image attention from 197 to ${\sim}39$ tokens), FlashAttention-2
 varlen's attention latency decreases by \emph{less than 1\%} at
@@ -313,8 +314,7 @@ However, in our experiments it is significantly slower
 than FA2 varlen on Ampere GPUs (up to 100$\times$), due to the overhead of constructing
 jagged NestedTensor objects, transposing nested layouts, and unpacking
 results.
-This confirms that the dispatch-overhead problem is not trivially
-solved by switching to a different framework API.
+% (framework API switching does not solve the overhead bottleneck)
 
 % =====================================================================
 \section{Method}\label{sec:kernel}
