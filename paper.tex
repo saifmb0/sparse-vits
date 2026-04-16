@@ -449,7 +449,7 @@ All timings use 10 warmup and 500 timed iterations.
 
 \begin{figure}[t]
   \centering
-  \includegraphics[width=\linewidth]{/home/saifmb0/Desktop/RA - AAU/sparse_vits/results/A100_run_2/bench2_sparsity.png}
+  \includegraphics[width=\linewidth]{./figures/A100_run_2/bench2_sparsity.png}
   \caption{%
     \textbf{Speedup vs.\ prune ratio} (BS=64, DeiT-Base, A100).
     Padded execution yields \emph{no} speedup at any sparsity level
@@ -499,7 +499,7 @@ ATS~\cite{fayyaz2022ats} & 0.57 & 0.57 & \textbf{1.14} & \textbf{1.65} \\
 
 \begin{figure}[t]
   \centering
-  \includegraphics[width=\linewidth]{/home/saifmb0/Desktop/RA - AAU/sparse_vits/results/A100_run_2/bench6_pipeline_comparison.png}
+  \includegraphics[width=\linewidth]{./figures/A100_run_2/bench6_pipeline_comparison.png}
   \caption{%
     \textbf{End-to-end inference throughput} (images/s) at 50\%
     pruning, DeiT-Base.
@@ -529,7 +529,7 @@ padded SDPA, FA2 varlen, and our Triton ragged kernel.
 
 \begin{figure}[t]
   \centering
-  \includegraphics[width=\linewidth]{/home/saifmb0/Desktop/RA - AAU/sparse_vits/results/A100_run_2/bench4_model_scaling_throughput.png}
+  \includegraphics[width=\linewidth]{./figures/A100_run_2/bench4_model_scaling_throughput.png}
   \caption{%
     \textbf{Throughput across DeiT scales} at 50\% pruning.
     The ragged pipeline provides consistent gains from the smallest
@@ -565,7 +565,7 @@ DeiT-B  &  3{,}749 & 2{,}303 & \textbf{5{,}268}  \\
 
 \begin{figure}[t]
   \centering
-  \includegraphics[width=\linewidth]{/home/saifmb0/Desktop/RA - AAU/sparse_vits/results/A100_run_2/bench5_pareto.png}
+  \includegraphics[width=\linewidth]{./figures/A100_run_2/bench5_pareto.png}
   \caption{%
     \textbf{Accuracy--throughput Pareto front} on ImageNet-1K
     (DeiT-S).
@@ -620,7 +620,7 @@ All top-1 classification predictions match exactly.
 
 \begin{figure}[t]
   \centering
-  \includegraphics[width=\linewidth]{/home/saifmb0/Desktop/RA - AAU/sparse_vits/results/A100_run_2/bench6_kernel_microbench.png}
+  \includegraphics[width=\linewidth]{./figures/A100_run_2/bench6_kernel_microbench.png}
   \caption{%
     \textbf{Isolated attention kernel latency} across
     (batch size, sparsity) configurations.
