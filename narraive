@@ -1,0 +1,73 @@
+I will read the "Analysis" and "Related Work" sections of paper.tex to see if there are any deeper insights or novelties, such as the quantification of the dispatch-overhead bottleneck or
+  specific pipeline optimizations, that might elevate the paper's scientific contribution.
+
+  ✓  ReadFile  paper.tex → Read lines 650-859 of 859 from paper.tex
+
+✦ You're right that it's a "solid gain" rather than a fundamental algorithmic breakthrough, but calling it just a "dumbed down FA2" misses the core technical insight that makes it valuable
+  for a systems-leaning audience (like MLSys or a specialized track).
+
+  Why it’s probably not NeurIPS-grade (but still "Hard Engineering")
+  For a top-tier general conference like NeurIPS, you usually need a novel mathematical approach or a widely generalizable theory. This paper is very vertically integrated: it solves a
+  specific performance bottleneck (dispatch overhead) for a specific hardware target (Ada Lovelace) in a specific domain (Vision Transformers). It doesn't change the online softmax algorithm
+  (it's bit-equivalent to FA2).
+
+  The "Novel" Value Add
+  However, the paper makes three contributions that are more than just "dumbing down" the code:
+
+   1. Quantifying the "Dispatch-Overhead Bottleneck": The paper identifies that at the short sequence lengths typical of ViTs (post-pruning), we have entered a computationally-invisible
+      regime. It proves that existing libraries (FA2, NestedTensor) have a fixed "software tax" (~50$\mu$s) that is larger than the actual workload. This shifts the research question from
+      "How do we make the math faster?" to "How do we make the launch faster?"
+   2. Specialized Pipeline Integration: It's not just the attention kernel; it's a fused pack--attend--unpack system. In standard pruning papers, speedups are often reported in FLOPs or
+      theoretical gains. This paper implements the "vectorized copy" packing kernel and shows that for 224x224 inputs, the overhead of moving tokens around can easily eat the pruning gains
+      if not done in a "dispatch-aware" way.
+   3. Benchmark Critique: The paper calls out a major flaw in current ViT pruning research: researchers benchmark against padded baselines, which makes their pruning look fast. The paper
+      shows that padded baselines have flat performance regardless of pruning, and that the real benchmark should be variable-length kernels—where pruning gains actually disappear unless you
+      use a lightweight kernel like theirs.
+
+  Summary
+  It’s high-quality systems engineering. It won't win a "Best Paper" for theoretical innovation, but it solves a practical problem that currently prevents token pruning from being useful in
+  production environments (where BS=1-4 and low latency are king). It's essentially "Extreme Specialization" as a solution to "General-Purpose Overhead."
+▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+ > So which venues? target by venue date, today is apr 28th                                                                                                                                   
+▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
+✦ Since today is April 28, 2026, you are in a prime window for several conferences that value systems engineering, efficiency, and practical computer vision.
+
+  Given that the paper is "Hard Engineering" (solid gains, specific hardware optimization, benchmark critique) rather than a theoretical breakthrough, here are the most suitable venues
+  categorized by their upcoming deadlines:
+
+  1. The "Sprint" Target: NeurIPS 2026 (Datasets & Benchmarks Track)
+   * Deadline: Mid-May 2026 (~3 weeks away).
+   * Why: While you expressed doubt about "NeurIPS-grade," the Datasets and Benchmarks track specifically prizes papers that identify flaws in current evaluation methodologies. Your critique
+     of how the "padding tax" masks the true benefits of pruning fits perfectly here.
+   * Strategy: Frame the paper as a "Systematic re-evaluation of token pruning efficiency," with the Triton kernel as the proof-of-concept that exposes the hidden dispatch bottleneck.
+
+  2. The "Perfect Match": WACV 2027 (Winter Conf. on Applications of Computer Vision)
+   * Deadline: Round 1 is usually in July 2026.
+   * Why: WACV is the premier venue for practical computer vision. They have a dedicated "Algorithms and Systems" track that loves exactly this: making models actually run faster on
+     real-world hardware.
+   * Likelihood: Very High. The "Ada Lovelace" specific tuning and E2E pipeline are exactly what WACV reviewers look for.
+
+  3. The "Systems" Choice: MLSys 2027 (Conf. on Machine Learning and Systems)
+   * Deadline: Usually October 2026.
+   * Why: This is the most prestigious venue for Triton-based work and kernel optimization. They care deeply about the "software tax" and "dispatch overhead" arguments you’ve made.
+   * Trade-off: It’s a long wait (6 months to submission), but it is the most relevant community.
+
+  4. The "Safety" Target: BMVC 2026 (British Machine Vision Conference)
+   * Deadline: Late May 2026 (~4 weeks away).
+   * Why: BMVC is a high-quality Tier-2 conference that is very receptive to "efficient vision" papers. It’s a great venue if you want to get the work out quickly without the high-stakes
+     variance of NeurIPS.
+
+  Summary Recommendation
+  ┌───────────────┬──────────┬───────────────────────┬─────────────────────────────────────────────────────┐
+  │ Venue         │ Deadline │ Vibe                  │ Recommendation                                      │
+  ├───────────────┼──────────┼───────────────────────┼─────────────────────────────────────────────────────┤
+  │ NeurIPS (D&B) │ ~May 15  │ Prestige / Critique   │ Submit if you want to reach the ML community.       │
+  │ BMVC          │ ~May 25  │ Technical / Efficient │ Great fast-track option.                            │
+  │ WACV          │ July 15  │ Practical / Systems   │ Best fit for the current "Engineering" focus.       │
+  │ MLSys         │ October  │ Pure Systems          │ The "Gold Standard" for this specific type of work. │
+  └───────────────┴──────────┴───────────────────────┴─────────────────────────────────────────────────────┘
+
+  My advice: Polish the "Benchmarking Critique" section and aim for NeurIPS Datasets & Benchmarks in three weeks. If it gets rejected, you’ll have great feedback and can immediately pivot to
+  WACV in July.
+
+

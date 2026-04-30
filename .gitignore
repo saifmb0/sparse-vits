@@ -6,4 +6,5 @@ figures
 *.log
 *.aux
 *.out
-
+*.pdf
+*.png
