@@ -1,0 +1,63 @@
+{
+  "gpu": "NVIDIA RTX 4000 Ada Generation",
+  "model": "deit_base_patch16_224",
+  "fixed_ratio": 0.5,
+  "batch_sizes": [
+    1,
+    8,
+    32,
+    128
+  ],
+  "padded": {
+    "1": {
+      "front_early_ms": 0.516,
+      "gather_ms": 0.06,
+      "late_blocks_ms": 1.113,
+      "head_ms": 0.029
+    },
+    "8": {
+      "front_early_ms": 2.308,
+      "gather_ms": 0.277,
+      "late_blocks_ms": 5.235,
+      "head_ms": 0.033
+    },
+    "32": {
+      "front_early_ms": 9.255,
+      "gather_ms": 0.979,
+      "late_blocks_ms": 22.576,
+      "head_ms": 0.045
+    },
+    "128": {
+      "front_early_ms": 38.472,
+      "gather_ms": 3.888,
+      "late_blocks_ms": 94.788,
+      "head_ms": 0.033
+    }
+  },
+  "triton": {
+    "1": {
+      "front_early_ms": 0.516,
+      "pack_ms": 0.085,
+      "late_blocks_ms": 1.127,
+      "head_ms": 0.039
+    },
+    "8": {
+      "front_early_ms": 2.308,
+      "pack_ms": 0.087,
+      "late_blocks_ms": 2.067,
+      "head_ms": 0.04
+    },
+    "32": {
+      "front_early_ms": 9.255,
+      "pack_ms": 0.089,
+      "late_blocks_ms": 8.726,
+      "head_ms": 0.053
+    },
+    "128": {
+      "front_early_ms": 38.472,
+      "pack_ms": 0.096,
+      "late_blocks_ms": 34.006,
+      "head_ms": 0.039
+    }
+  }
+}

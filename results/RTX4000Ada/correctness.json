@@ -1,0 +1,80 @@
+{
+  "gpu": "NVIDIA RTX 4000 Ada Generation",
+  "tolerance": 0.01,
+  "kernel": {
+    "BS=32, 0% pruned": {
+      "triton_max_abs_diff": 0.000488,
+      "triton_mean_abs_diff": 1.6e-05,
+      "triton_passed": true,
+      "fa2_max_abs_diff": 0.000488,
+      "fa2_mean_abs_diff": 1.6e-05,
+      "fa2_passed": true
+    },
+    "BS=32, 50% pruned": {
+      "triton_max_abs_diff": 0.000488,
+      "triton_mean_abs_diff": 2.1e-05,
+      "triton_passed": true,
+      "fa2_max_abs_diff": 0.000488,
+      "fa2_mean_abs_diff": 2.2e-05,
+      "fa2_passed": true
+    },
+    "BS=32, 80% pruned": {
+      "triton_max_abs_diff": 0.000977,
+      "triton_mean_abs_diff": 3e-05,
+      "triton_passed": true,
+      "fa2_max_abs_diff": 0.000977,
+      "fa2_mean_abs_diff": 3e-05,
+      "fa2_passed": true
+    },
+    "BS=64, 0% pruned": {
+      "triton_max_abs_diff": 0.000488,
+      "triton_mean_abs_diff": 1.6e-05,
+      "triton_passed": true,
+      "fa2_max_abs_diff": 0.000488,
+      "fa2_mean_abs_diff": 1.6e-05,
+      "fa2_passed": true
+    },
+    "BS=64, 50% pruned": {
+      "triton_max_abs_diff": 0.000977,
+      "triton_mean_abs_diff": 2.1e-05,
+      "triton_passed": true,
+      "fa2_max_abs_diff": 0.000977,
+      "fa2_mean_abs_diff": 2.2e-05,
+      "fa2_passed": true
+    },
+    "BS=64, 80% pruned": {
+      "triton_max_abs_diff": 0.000977,
+      "triton_mean_abs_diff": 3e-05,
+      "triton_passed": true,
+      "fa2_max_abs_diff": 0.000977,
+      "fa2_mean_abs_diff": 3e-05,
+      "fa2_passed": true
+    }
+  },
+  "e2e": {
+    "BS=1": {
+      "triton_max_abs_diff": 0.001465,
+      "triton_mean_abs_diff": 0.000328,
+      "triton_predictions_match": true,
+      "triton_passed": true,
+      "fa2_max_abs_diff": 0.001709,
+      "fa2_predictions_match": true
+    },
+    "BS=4": {
+      "triton_max_abs_diff": 0.003906,
+      "triton_mean_abs_diff": 0.000362,
+      "triton_predictions_match": true,
+      "triton_passed": true,
+      "fa2_max_abs_diff": 0.003906,
+      "fa2_predictions_match": true
+    },
+    "BS=16": {
+      "triton_max_abs_diff": 0.00293,
+      "triton_mean_abs_diff": 0.000328,
+      "triton_predictions_match": true,
+      "triton_passed": true,
+      "fa2_max_abs_diff": 0.00293,
+      "fa2_predictions_match": true
+    }
+  }
+}
