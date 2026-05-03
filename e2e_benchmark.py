@@ -2,18 +2,21 @@
 """
 e2e_benchmark.py
 ================
-End-to-end throughput comparison: three full DeiT-B inference pipelines
-on RTX 4000 Ada (SM89).
+End-to-end throughput comparison: three full DeiT-B inference pipelines.
 
 Pipelines under test
 --------------------
   1. PyTorch Padded (SDPA)      — pad kept tokens to max_len, additive mask
   2. Triton Ragged (ours)       — flat packed tokens, cu_seqlens Triton kernel
   3. FlashAttention-2 (varlen)  — flat packed tokens, FA2 flash_attn_varlen_func
+                                  (skipped with --no-fa2 for GPUs without varlen API)
 
 All three use the same front-end (patch embed + early blocks) and the same
 threshold-L2 token pruning at fixed_ratio=0.5.  Only the late-block
 attention implementation differs.
+
+Inputs: real ImageNet-1K validation images streamed from HuggingFace
+        (set HF_TOKEN env var or pass --hf-token).
 
 Timing: CUDA events per iteration, median over BENCH_ITERS reported.
 """
@@ -49,10 +52,11 @@ DEVICE           = "cuda"
 DTYPE            = torch.float16
 FIXED_RATIO      = 0.5                       # 50% tokens dropped
 
-BATCH_SIZES      = [1, 4, 8, 16, 32, 64, 128]
-WARMUP_ITERS     = 20
-BENCH_ITERS      = 100
-IMG_SIZE         = 224
+BATCH_SIZES         = [1, 4, 8, 16, 32, 64, 128]
+WARMUP_ITERS        = 20
+BENCH_ITERS         = 100
+IMG_SIZE            = 224
+DEFAULT_IN_SAMPLES = 1000  # ImageNet val images to stream
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -396,11 +400,71 @@ class FA2VarlenPipeline(nn.Module):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Timing
+# ImageNet-1K data loading
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _make_batch(bs):
-    return torch.randn(bs, 3, IMG_SIZE, IMG_SIZE, device=DEVICE, dtype=DTYPE)
+def load_imagenet_val(max_samples: int = DEFAULT_IN_SAMPLES, hf_token: str = None):
+    """
+    Stream ImageNet-1K validation images from HuggingFace.
+    Returns a list of float16 tensors [3, 224, 224] on CPU.
+    Images are kept on CPU and moved to GPU per-batch to avoid OOM.
+    """
+    from datasets import load_dataset
+    from torchvision import transforms
+
+    token = hf_token or os.environ.get("HF_TOKEN")
+    if not token:
+        raise RuntimeError(
+            "HF_TOKEN not set. Export it or pass --hf-token. "
+            "Get one at https://huggingface.co/settings/tokens"
+        )
+
+    print(f"Streaming {max_samples} ImageNet-1K val images from HuggingFace...",
+          flush=True)
+    ds = load_dataset(
+        "ILSVRC/imagenet-1k",
+        split="validation",
+        streaming=True,
+        token=token,
+    )
+
+    tfm = transforms.Compose([
+        transforms.Resize(256),
+        transforms.CenterCrop(IMG_SIZE),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                             std=[0.229, 0.224, 0.225]),
+    ])
+
+    tensors = []
+    for i, sample in enumerate(ds):
+        if i >= max_samples:
+            break
+        img = sample["image"]
+        if img.mode != "RGB":
+            img = img.convert("RGB")
+        tensors.append(tfm(img).to(DTYPE))   # float16, CPU
+        if (i + 1) % 200 == 0:
+            print(f"  ... {i + 1}/{max_samples}", flush=True)
+
+    print(f"  Loaded {len(tensors)} images.", flush=True)
+    return tensors
+
+
+def _make_batch(imagenet_tensors: list, bs: int) -> torch.Tensor:
+    """
+    Sample a batch of `bs` images from the pre-loaded ImageNet tensors.
+    Wraps around if bs > len(tensors). Returned tensor is on GPU.
+    """
+    n = len(imagenet_tensors)
+    indices = [i % n for i in range(bs)]
+    batch = torch.stack([imagenet_tensors[i] for i in indices])
+    return batch.to(DEVICE)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Timing
+# ─────────────────────────────────────────────────────────────────────────────
 
 
 def cuda_event_bench(model, images, warmup=WARMUP_ITERS, iters=BENCH_ITERS):
@@ -428,12 +492,16 @@ def cuda_event_bench(model, images, warmup=WARMUP_ITERS, iters=BENCH_ITERS):
 # Main
 # ─────────────────────────────────────────────────────────────────────────────
 
-def run_e2e(results_dir="results/RTX4000Ada"):
+def run_e2e(results_dir="results/RTX4000Ada",
+            imagenet_tensors=None,
+            no_fa2=False):
+    gpu_name = torch.cuda.get_device_name(0)
     print("\n" + "=" * 70)
-    print("RTX 4000 Ada — End-to-End Pipeline Throughput (CUDA-event timing)")
+    print(f"{gpu_name} — End-to-End Pipeline Throughput (ImageNet-1K, CUDA-event timing)")
     print("=" * 70)
     print(f"Model  : {MODEL_NAME}")
     print(f"Pruning: {int(FIXED_RATIO*100)}% tokens dropped (threshold-L2)")
+    print(f"Images : {len(imagenet_tensors)} real ImageNet-1K val images")
     print(f"Timing : {BENCH_ITERS} iterations, median throughput reported")
     print(f"Warmup : {WARMUP_ITERS} iterations\n")
 
@@ -449,36 +517,41 @@ def run_e2e(results_dir="results/RTX4000Ada"):
     triton_p = TritonRaggedPipeline(deit).to(DEVICE, dtype=DTYPE).eval()
     pipelines["Triton Ragged (ours)"] = triton_p
 
-    try:
-        from flash_attn import flash_attn_varlen_func  # noqa: F401
-        fa2_p = FA2VarlenPipeline(deit).to(DEVICE, dtype=DTYPE).eval()
-        pipelines["FlashAttention-2 (varlen)"] = fa2_p
-        print("FlashAttention-2 available — including in comparison.\n")
-    except ImportError:
-        print("flash_attn not installed — skipping FA2 pipeline.\n")
+    if not no_fa2:
+        try:
+            from flash_attn import flash_attn_varlen_func  # noqa: F401
+            fa2_p = FA2VarlenPipeline(deit).to(DEVICE, dtype=DTYPE).eval()
+            pipelines["FlashAttention-2 (varlen)"] = fa2_p
+            print("FlashAttention-2 available — including in comparison.\n")
+        except ImportError:
+            print("flash_attn not installed — skipping FA2 pipeline.\n")
+    else:
+        print("--no-fa2 set — skipping FlashAttention-2 varlen pipeline.\n")
 
     del deit
     torch.cuda.empty_cache()
 
     results = {
-        "gpu":          torch.cuda.get_device_name(0),
-        "model":        MODEL_NAME,
-        "fixed_ratio":  FIXED_RATIO,
-        "timing":       "cuda_events_median_throughput",
-        "batch_sizes":  BATCH_SIZES,
-        "pipelines":    {k: [] for k in pipelines},
-        "latency_ms":   {k: [] for k in pipelines},
-        "p5_ms":        {k: [] for k in pipelines},
-        "p95_ms":       {k: [] for k in pipelines},
+        "gpu":              gpu_name,
+        "model":           MODEL_NAME,
+        "fixed_ratio":     FIXED_RATIO,
+        "timing":          "cuda_events_median_throughput",
+        "input":           "imagenet1k_val",
+        "imagenet_samples": len(imagenet_tensors),
+        "batch_sizes":     BATCH_SIZES,
+        "pipelines":       {k: [] for k in pipelines},
+        "latency_ms":      {k: [] for k in pipelines},
+        "p5_ms":           {k: [] for k in pipelines},
+        "p95_ms":          {k: [] for k in pipelines},
     }
 
     for bs in BATCH_SIZES:
         print(f"[BS={bs:3d}]", flush=True)
-        images = _make_batch(bs)
+        images = _make_batch(imagenet_tensors, bs)
         for name, model in pipelines.items():
             try:
                 tp, med, lo, hi = cuda_event_bench(model, images)
-                print(f"  {name:35s}  {tp:8.1f} img/s  ({med:.2f} ms [{lo:.2f}–{hi:.2f}])")
+                print(f"  {name:35s}  {tp:8.1f} img/s  ({med:.2f} ms [{lo:.2f}\u2013{hi:.2f}])")
                 results["pipelines"][name].append(round(tp, 1))
                 results["latency_ms"][name].append(round(med, 3))
                 results["p5_ms"][name].append(round(lo,  3))
@@ -487,6 +560,7 @@ def run_e2e(results_dir="results/RTX4000Ada"):
                 print(f"  {name:35s}  FAILED: {exc}")
                 for key in ("pipelines", "latency_ms", "p5_ms", "p95_ms"):
                     results[key][name].append(-1.0)
+        del images
         torch.cuda.empty_cache()
         gc.collect()
 
@@ -570,21 +644,38 @@ def plot_e2e(results, results_dir):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="E2E throughput benchmark")
+    parser = argparse.ArgumentParser(description="E2E throughput benchmark (ImageNet-1K)")
     parser.add_argument("--results-dir", default="results/RTX4000Ada",
                         help="directory for JSON + PNG output")
+    parser.add_argument("--no-fa2", action="store_true",
+                        help="Skip FlashAttention-2 varlen pipeline "
+                             "(use on GPUs without FA2 varlen support, e.g. T4/GTX1650)")
+    parser.add_argument("--imagenet-samples", type=int, default=DEFAULT_IN_SAMPLES,
+                        help=f"Number of ImageNet-1K val images to stream (default {DEFAULT_IN_SAMPLES})")
+    parser.add_argument("--hf-token", default=None,
+                        help="HuggingFace token (falls back to HF_TOKEN env var)")
     args = parser.parse_args()
 
     if not torch.cuda.is_available():
         sys.exit("CUDA not available")
 
+    # ── Load real ImageNet-1K images once, reuse across all batch sizes ──
+    imagenet_tensors = load_imagenet_val(
+        max_samples=args.imagenet_samples,
+        hf_token=args.hf_token,
+    )
+
     results_dir = args.results_dir
-    results = run_e2e(results_dir)
+    results = run_e2e(
+        results_dir=results_dir,
+        imagenet_tensors=imagenet_tensors,
+        no_fa2=args.no_fa2,
+    )
     os.makedirs(results_dir, exist_ok=True)
     path = os.path.join(results_dir, "e2e_benchmark.json")
     with open(path, "w") as f:
         json.dump(results, f, indent=2)
-    print(f"✓  Saved {path}")
+    print(f"\u2713  Saved {path}")
     plot_e2e(results, results_dir)
 
 
