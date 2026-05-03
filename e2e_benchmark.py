@@ -427,6 +427,11 @@ def load_imagenet_val(max_samples: int = DEFAULT_IN_SAMPLES, hf_token: str = Non
         streaming=True,
         token=token,
     )
+    # Shuffle so we sample uniformly across all 1000 classes rather than
+    # taking the first N images in class-sorted order.
+    # buffer_size=5000 gives good mixing (val set = 50 imgs/class × 1000 classes).
+    # seed=42 makes the sample reproducible across machines.
+    ds = ds.shuffle(seed=42, buffer_size=5000)
 
     tfm = transforms.Compose([
         transforms.Resize(256),
