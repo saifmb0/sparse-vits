@@ -52,7 +52,7 @@ DEVICE           = "cuda"
 DTYPE            = torch.float16
 FIXED_RATIO      = 0.5                       # 50% tokens dropped
 
-BATCH_SIZES         = [1, 4, 8, 16, 32, 64, 128]
+BATCH_SIZES         = [1, 2, 4, 6, 8, 12, 16, 32, 64, 128]
 WARMUP_ITERS        = 20
 BENCH_ITERS         = 100
 IMG_SIZE            = 224
