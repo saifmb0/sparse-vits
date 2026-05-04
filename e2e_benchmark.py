@@ -27,6 +27,7 @@ import json
 import os
 import statistics
 import sys
+from datetime import datetime
 
 import torch
 # cuDNN 9.x fails to initialize on this system; disable it so the
@@ -38,9 +39,6 @@ import torch.nn.functional as F
 import triton
 import triton.language as tl
 import timm
-import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
 
 # ── Config ────────────────────────────────────────────────────────────────────
 MODEL_NAME       = "deit_base_patch16_224"
@@ -572,81 +570,6 @@ def run_e2e(results_dir="results/RTX4000Ada",
     return results
 
 
-def plot_e2e(results, results_dir):
-    bs_list   = results["batch_sizes"]
-    pipelines = results["pipelines"]
-
-    styles = {
-        "PyTorch Padded (SDPA)":      ("s--", "#d62728"),
-        "Triton Ragged (ours)":       ("D-",  "#2ca02c"),
-        "FlashAttention-2 (varlen)":  ("^-",  "#9467bd"),
-    }
-
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
-
-    # ── Throughput ──────────────────────────────────────────────────
-    for name, vals in pipelines.items():
-        marker, color = styles.get(name, ("o-", "gray"))
-        valid = [(b, v) for b, v in zip(bs_list, vals) if v > 0]
-        if valid:
-            bx, vy = zip(*valid)
-            ax1.plot(bx, vy, marker, label=name, color=color,
-                     linewidth=2, markersize=8)
-
-    ax1.set_xlabel("Batch size", fontsize=12)
-    ax1.set_ylabel("Throughput (img/s, higher is better)", fontsize=11)
-    ax1.set_title(
-        f"E2E Throughput — DeiT-B, {int(FIXED_RATIO*100)}% pruned\n"
-        f"RTX 4000 Ada (SM89), CUDA-event timing",
-        fontsize=11, fontweight="bold",
-    )
-    ax1.legend(fontsize=9)
-    ax1.grid(True, alpha=0.3)
-
-    # ── Latency (ms) ────────────────────────────────────────────────
-    lat = results["latency_ms"]
-    for name, vals in lat.items():
-        marker, color = styles.get(name, ("o-", "gray"))
-        valid = [(b, v) for b, v in zip(bs_list, vals) if v > 0]
-        if valid:
-            bx, vy = zip(*valid)
-            p5v  = [results["p5_ms"][name][bs_list.index(b)] for b in bx]
-            p95v = [results["p95_ms"][name][bs_list.index(b)] for b in bx]
-            ax2.plot(bx, vy, marker, label=name, color=color,
-                     linewidth=2, markersize=8)
-            ax2.fill_between(bx, p5v, p95v, alpha=0.12, color=color)
-
-    ax2.set_xlabel("Batch size", fontsize=12)
-    ax2.set_ylabel("Latency (ms, lower is better)", fontsize=11)
-    ax2.set_title(
-        f"E2E Latency — DeiT-B, {int(FIXED_RATIO*100)}% pruned\n"
-        "shaded band = p5–p95",
-        fontsize=11, fontweight="bold",
-    )
-    ax2.legend(fontsize=9)
-    ax2.grid(True, alpha=0.3)
-
-    plt.tight_layout()
-    os.makedirs(results_dir, exist_ok=True)
-    out = os.path.join(results_dir, "e2e_benchmark.png")
-    fig.savefig(out, dpi=150, bbox_inches="tight")
-    plt.close(fig)
-    print(f"\n✓  Saved {out}")
-
-    # ── speedup table ───────────────────────────────────────────────
-    ref = "FlashAttention-2 (varlen)"
-    if ref in pipelines:
-        print(f"\nSpeedup over '{ref}' (throughput):")
-        ref_vals = pipelines[ref]
-        for name, vals in pipelines.items():
-            if name == ref:
-                continue
-            row = []
-            for r, v in zip(ref_vals, vals):
-                row.append(f"{v/r:.2f}×" if r > 0 and v > 0 else "  N/A")
-            print(f"  {name:35s}  {' | '.join(row)}")
-        print(f"  Batch sizes: {bs_list}")
-
 
 def main():
     parser = argparse.ArgumentParser(description="E2E throughput benchmark (ImageNet-1K)")
@@ -676,12 +599,12 @@ def main():
         imagenet_tensors=imagenet_tensors,
         no_fa2=args.no_fa2,
     )
+    ts = datetime.now().strftime("%Y%m%d%H%M%S")
     os.makedirs(results_dir, exist_ok=True)
-    path = os.path.join(results_dir, "e2e_benchmark.json")
+    path = os.path.join(results_dir, f"e2e_benchmark_{ts}.json")
     with open(path, "w") as f:
         json.dump(results, f, indent=2)
     print(f"\u2713  Saved {path}")
-    plot_e2e(results, results_dir)
 
 
 if __name__ == "__main__":
