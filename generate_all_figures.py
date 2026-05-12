@@ -191,9 +191,9 @@ for i, bs in enumerate(bs_labels):
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# Figure 3 – Stage breakdown (100-run aggregated)
+# Figure 3 – Stage breakdown (now a TABLE in the paper; data only)
 # ═══════════════════════════════════════════════════════════════════════════════
-print("\nGenerating stage_breakdown.png …")
+print("\nComputing stage_breakdown statistics (for paper Table 4) …")
 sb_files = glob.glob("results/stage_breakdown/*/stage_breakdown.json")
 if not sb_files:
     raise FileNotFoundError("No stage_breakdown JSON files found")
@@ -223,99 +223,17 @@ for pipeline in ["padded", "triton"]:
             for stage, vals in sb_raw[pipeline][bs].items()
         }
 
-# Plot grouped stacked bars
-fig, ax = plt.subplots(figsize=(5.5, 2.8))
-
-n_bs = len(sb_batch_sizes)
-x = np.arange(n_bs)
-w = 0.35
-
-pad_colors = {
-    "front_early_ms": "#4878cf",
-    "gather_ms":      "#e87d2a",
-    "late_blocks_ms": "#d62728",
-    "head_ms":        "#888888",
-}
-tri_colors = {
-    "front_early_ms": "#4878cf",
-    "pack_ms":        "#f7c100",
-    "late_blocks_ms": "#2ca02c",
-    "head_ms":        "#888888",
-}
-
-pad_stages = ["front_early_ms", "gather_ms", "late_blocks_ms", "head_ms"]
-tri_stages = ["front_early_ms", "pack_ms",   "late_blocks_ms", "head_ms"]
-
-pad_labels_nice = {
-    "front_early_ms": "Front + early blocks",
-    "gather_ms":      "Gather (padded)",
-    "late_blocks_ms": "Late blocks (attention)",
-    "head_ms":        "Classification head",
-}
-tri_labels_nice = {
-    "front_early_ms": "Front + early blocks",
-    "pack_ms":        "Pack (Triton)",
-    "late_blocks_ms": "Late blocks (attention)",
-    "head_ms":        "Classification head",
-}
-
-# Draw padded bars
-bottoms = np.zeros(n_bs)
-for stage in pad_stages:
-    vals = np.array([sb_agg["padded"][bs][stage] for bs in sb_batch_sizes])
-    ax.bar(x - w/2, vals, w, bottom=bottoms,
-           color=pad_colors[stage],
-           label=pad_labels_nice[stage] if stage != "front_early_ms" else None,
-           edgecolor="white", linewidth=0.4)
-    bottoms += vals
-
-# Draw triton bars
-bottoms = np.zeros(n_bs)
-for stage in tri_stages:
-    vals = np.array([sb_agg["triton"][bs][stage] for bs in sb_batch_sizes])
-    ax.bar(x + w/2, vals, w, bottom=bottoms,
-           color=tri_colors[stage],
-           edgecolor="white", linewidth=0.4)
-    bottoms += vals
-
-ax.set_xticks(x)
-ax.set_xticklabels([f"BS={bs}" for bs in sb_batch_sizes])
-ax.set_ylabel("Latency (ms)")
-ax.set_title("Per-Stage Latency — DeiT-B, 50% pruned\n"
-             "RTX 4000 Ada, medians of 100 runs", fontweight="bold")
-
-# Manual legend
-legend_elements = [
-    Patch(facecolor="#4878cf", label="Front + early blocks"),
-    Patch(facecolor=pad_colors["late_blocks_ms"], label="Late blocks — Padded"),
-    Patch(facecolor=tri_colors["late_blocks_ms"], label="Late blocks — Triton"),
-    Patch(facecolor=pad_colors["gather_ms"],      label="Gather (padded)"),
-    Patch(facecolor=tri_colors["pack_ms"],        label="Pack (Triton)"),
-    Patch(facecolor="#888888",                    label="Class. head"),
-]
-ax.legend(handles=legend_elements, fontsize=7, loc="upper left",
-          ncol=2, framealpha=0.9)
-
-# Annotate pipeline labels
-total_pad = {bs: sum(sb_agg["padded"][bs].values()) for bs in sb_batch_sizes}
-total_tri = {bs: sum(sb_agg["triton"][bs].values()) for bs in sb_batch_sizes}
-for i, bs in enumerate(sb_batch_sizes):
-    ax.text(i - w/2, total_pad[bs] + 0.5, "Padded", ha="center",
-            va="bottom", fontsize=6, color="#333333", rotation=0)
-    ax.text(i + w/2, total_tri[bs] + 0.5, "Triton", ha="center",
-            va="bottom", fontsize=6, color="#333333", rotation=0)
-
-plt.tight_layout()
-fig.savefig("figures/stage_breakdown.png", dpi=200, bbox_inches="tight")
-plt.close(fig)
-
-print("  Stage breakdown medians (ms):")
-for bs in sb_batch_sizes:
-    p = sb_agg["padded"][bs]
-    t = sb_agg["triton"][bs]
-    lb_speedup = p["late_blocks_ms"] / t["late_blocks_ms"]
-    print(f"  BS={bs:3s}: padded_late={p['late_blocks_ms']:.1f} "
-          f"triton_late={t['late_blocks_ms']:.1f} speedup={lb_speedup:.2f}×")
+print("  Stage breakdown medians (ms) at BS=8:")
+bs = "8"
+p = sb_agg["padded"][bs]
+t = sb_agg["triton"][bs]
+print(f"    Padded:  Front={p['front_early_ms']:.2f}  Gather={p['gather_ms']:.2f}  "
+      f"Late={p['late_blocks_ms']:.2f}  Head={p['head_ms']:.2f}  "
+      f"Total={sum(p.values()):.2f}")
+print(f"    Triton:  Front={t['front_early_ms']:.2f}  Pack={t['pack_ms']:.2f}  "
+      f"Late={t['late_blocks_ms']:.2f}  Head={t['head_ms']:.2f}  "
+      f"Total={sum(t.values()):.2f}")
+print(f"    Late-block speedup: {p['late_blocks_ms']/t['late_blocks_ms']:.2f}×")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

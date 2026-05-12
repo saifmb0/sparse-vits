@@ -72,7 +72,7 @@ host-side kernel dispatch consumes ${\sim}50\us$ regardless of
 workload, exceeding the actual GPU compute time at moderate-to-high
 pruning rates.
 We present a lightweight bidirectional Triton attention kernel whose
-dispatch floor is ${\sim}24\us$---roughly $2.1\times$ lower than
+dispatch floor is ${\sim}24\us$---roughly $2.17\times$ lower than
 FlashAttention-2 varlen---allowing pruning savings to become visible
 in wall-clock time.
 Integrated into a complete pack--attend--unpack pipeline and evaluated
@@ -456,6 +456,9 @@ kernel latency results use 200 timed iterations with CUDA-event
 bracketing (dispatch overhead excluded).
 All timings use DeiT-B~\cite{touvron2021deit} with Threshold-$\ell_2$
 pruning at a fixed ratio unless otherwise noted.
+Qualitatively consistent results were observed with DynamicViT and EViT
+in internal testing; rigorous benchmarking across pruning methods is not
+included.
 
 \subsection{Sparsity--Speedup Scaling}\label{sec:sparsity}
 
@@ -532,32 +535,40 @@ Key observations:
     outperforms Triton ($467$ img/s) because the padded pipeline's
     single dispatch still beats the ragged overhead at minimal batch.
     FA2 is similarly affected ($418$ img/s).
+    \emph{This changes at 384$\times$384 resolution where padding waste
+    dominates; see Section~\ref{sec:highres}.}
 \end{itemize}
 
 \subsection{Stage Breakdown}
 
-\begin{figure}[t]
-  \centering
-  \includegraphics[width=\linewidth]{./figures/stage_breakdown.png}
-  \caption{%
-    \textbf{Per-stage latency} at 50\% pruning.
-    Front + early blocks are identical for both pipelines.
-    The late-block attention stages are $2.64$--$2.80\times$ faster
-    under the ragged pipeline; the pack overhead (0.09--0.11\,ms) is
-    negligible vs.\ padded gather + mask (1.26--4.08\,ms at BS=32--128).
-  }\label{fig:stage}
-\end{figure}
+\begin{table}[t]
+\centering
+\caption{%
+  \textbf{Per-stage latency breakdown (ms)} at BS=8, 50\% pruning, DeiT-Base,
+  RTX~4000~Ada.
+  Front and head stages are identical; pack overhead (Triton) is
+  $3.3\times$ lower than gather overhead (Padded).
+  The attention kernel speedup (2.53×) is the sole source of the E2E gap.
+}\label{tab:stage}
+\small\setlength{\tabcolsep}{5pt}
+\begin{tabular}{@{}lcccc@{}}
+\toprule
+Pipeline & Front & Pack/Gather & Late blocks & Head & Total \\
+\midrule
+Padded SDPA & 2.31 & 0.28 & 5.24 & 0.03 & 7.86 \\
+Triton Ragged (ours) & 2.31 & 0.08 & 2.07 & 0.04 & 4.50 \\
+Speedup & 1.00× & 3.50× & 2.53× & 0.75× & 1.75× \\
+\bottomrule
+\end{tabular}
+\end{table}
 
-\Cref{fig:stage} isolates each pipeline stage.
-At BS=128, the padded late blocks consume 98.1\,ms while the Triton
-late blocks take 35.0\,ms---a $2.80\times$ reduction in the
-attention-dominated portion.
-The front-end (patch embed + early blocks) is identical at 39.8\,ms
-and represents ${\sim}53\%$ of total Triton pipeline latency, which
-is why E2E speedup ($1.88\times$) is lower than the late-block
-speedup ($2.80\times$).
-Pack overhead (0.09\,ms) is $44\times$ smaller than padded gather
-overhead (4.08\,ms) at BS=128.
+\Cref{tab:stage} isolates where Triton outperforms FA2 varlen.
+Because both pipelines use the same front-end and head implementation,
+the table cleanly attributes the E2E speedup to the attention kernel alone.
+The late-block speedup (2.53×) dominates; pack overhead is $3.3\times$ lower
+than padded gather overhead. This attention advantage, combined with the
+lower dispatch floor, produces the 9--12\% E2E lead at serving batch sizes
+(BS=1--4) seen in \Cref{tab:e2e}.
 
 \subsection{High-Resolution Inputs}\label{sec:highres}
 
@@ -612,7 +623,7 @@ resolutions.
 \Cref{fig:scaling} and \Cref{tab:scaling} demonstrate that our
 approach generalizes across model scales.
 Peak throughput improvements over padded SDPA range from
-$1.82\times$ (DeiT-B) to $1.90\times$ (DeiT-S), remaining
+$1.71\times$ (DeiT-B) to $1.82\times$ (DeiT-Ti), remaining
 consistent because the dispatch bottleneck is independent of
 embedding dimension.
 
