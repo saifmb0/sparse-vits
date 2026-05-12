@@ -40,7 +40,7 @@
   Dispatch-Aware Ragged Attention for Pruned Vision Transformers
 }
 
-\author{\IEEEauthorblockN{Saif Mahmoud \orcidlink{0009-0004-8879-9335}}
+\author{\IEEEauthorblockN{Seifeldin Abdellatif \orcidlink{0009-0004-8879-9335}}
 \IEEEauthorblockA{\textit{College of Engineering} \\
 \textit{Al Ain University}\\
 Abu Dhabi, United Arab Emirates \\
@@ -471,8 +471,9 @@ included.
     Padded execution provides near-flat ${\sim}1\times$ throughput at
     all sparsity levels; our ragged pipeline reaches $2.87\times$
     at 90\% pruning and $1.81\times$ at 50\%.
-    FA2 varlen tracks Triton closely throughout, confirming that the
-    E2E gain over padded is shared by both ragged approaches.
+    FA2 varlen and Triton track closely throughout, confirming that the
+    E2E gain over padded is shared by both ragged approaches. Our kernel's
+    lower dispatch is masked by the large compute workload in this configuration.
   }\label{fig:sparsity}
 \end{figure}
 

@@ -113,22 +113,36 @@ triton  = np.array(ss["triton"])
 fa2     = np.array(ss["fa2"])
 ref_pad = padded  # speedup relative to padded at each ratio
 
-fig, ax = plt.subplots(figsize=(3.5, 2.6))
+fig, ax1 = plt.subplots(figsize=(4.0, 2.6))
 
-ax.plot(ratios, padded  / padded,  "s--", color=COLORS["PyTorch Padded (SDPA)"],
-        label=LABELS["PyTorch Padded (SDPA)"],    linewidth=1.5, markersize=5, zorder=3)
-ax.plot(ratios, triton  / padded,  "D-",  color=COLORS["Triton Ragged (ours)"],
-        label=LABELS["Triton Ragged (ours)"],     linewidth=1.5, markersize=5, zorder=3)
-ax.plot(ratios, fa2     / padded,  "^-",  color=COLORS["FlashAttention-2 (varlen)"],
-        label=LABELS["FlashAttention-2 (varlen)"], linewidth=1.5, markersize=5, zorder=3)
+# Left axis: speedup vs padded
+ax1.plot(ratios, padded  / padded,  "s--", color=COLORS["PyTorch Padded (SDPA)"],
+         label=LABELS["PyTorch Padded (SDPA)"],    linewidth=1.5, markersize=5, zorder=3)
+ax1.plot(ratios, triton  / padded,  "D-",  color=COLORS["Triton Ragged (ours)"],
+         label=LABELS["Triton Ragged (ours)"],     linewidth=1.5, markersize=5, zorder=3)
+ax1.plot(ratios, fa2     / padded,  "^-",  color=COLORS["FlashAttention-2 (varlen)"],
+         label=LABELS["FlashAttention-2 (varlen)"], linewidth=1.5, markersize=5, zorder=3)
 
-ax.axhline(1.0, color="gray", linewidth=0.8, linestyle=":")
-ax.set_xlabel("Pruning ratio (%)")
-ax.set_ylabel("Speedup over padded SDPA")
-ax.set_title("Speedup vs. Pruning Ratio\nBS=32, DeiT-B, RTX 4000 Ada", fontweight="bold")
-ax.set_xticks(ratios)
-ax.legend(loc="upper left")
-ax.yaxis.set_major_formatter(mticker.FormatStrFormatter("%.2f×"))
+ax1.axhline(1.0, color="gray", linewidth=0.8, linestyle=":")
+ax1.set_xlabel("Pruning ratio (%)")
+ax1.set_ylabel("Speedup over padded SDPA", color="black")
+ax1.tick_params(axis='y', labelcolor="black")
+ax1.set_xticks(ratios)
+ax1.yaxis.set_major_formatter(mticker.FormatStrFormatter("%.2f×"))
+
+# # Right axis: Triton vs FA2 speedup
+# ax2 = ax1.twinx()
+# triton_fa2_speedup = triton / fa2
+# ax2.plot(ratios, triton_fa2_speedup, "o--", color="#1f77b4",
+#          label="Triton / FA2", linewidth=1.5, markersize=4, zorder=2, alpha=0.7)
+# ax2.axhline(1.0, color="#1f77b4", linewidth=0.6, linestyle=":", alpha=0.5)
+# ax2.set_ylabel("Triton / FA2 speedup (right axis)", color="#1f77b4")
+# ax2.tick_params(axis='y', labelcolor="#1f77b4")
+# ax2.yaxis.set_major_formatter(mticker.FormatStrFormatter("%.2f×"))
+
+fig.suptitle("Speedup vs. Pruning Ratio\nBS=32, DeiT-B, RTX 4000 Ada", fontweight="bold")
+ax1.legend(loc="upper left", fontsize=8)
+# ax2.legend(loc="upper right", fontsize=8)
 
 plt.tight_layout()
 fig.savefig("figures/sparsity_sweep.png", dpi=200, bbox_inches="tight")
@@ -147,6 +161,18 @@ print("\nGenerating e2e_benchmark.png …")
 bs_labels, tp_agg = aggregate("results/e2e_benchmark", "e2e_benchmark.json", "pipelines")
 _,          lat_agg = aggregate("results/e2e_benchmark", "e2e_benchmark.json", "latency_ms")
 
+# Filter to BS <= 16 for figures
+max_bs_for_figures = 16
+bs_indices = [i for i, bs in enumerate(bs_labels) if bs <= max_bs_for_figures]
+bs_labels_fig = [bs_labels[i] for i in bs_indices]
+
+# Slice aggregated data to matching indices
+for name in tp_agg:
+    tp_agg[name] = [tp_agg[name][i] for i in bs_indices]
+for name in lat_agg:
+    lat_agg[name] = [lat_agg[name][i] for i in bs_indices]
+
+bs_labels = bs_labels_fig
 order = ["PyTorch Padded (SDPA)", "Triton Ragged (ours)", "FlashAttention-2 (varlen)"]
 
 fig, ax = plt.subplots(figsize=(3.5, 2.8))
@@ -244,6 +270,12 @@ with open("results/Old/RTX/high_res.json") as f:
     hr = json.load(f)
 
 hr_bs = hr["batch_sizes"]
+# Filter to BS <= 16
+hr_bs = [bs for bs in hr_bs if bs <= 16]
+for res in hr["resolutions"]:
+    for pipeline in ["padded", "triton", "fa2"]:
+        hr["resolutions"][res][pipeline] = hr["resolutions"][res][pipeline][:len(hr_bs)]
+
 resolutions = list(hr["resolutions"].keys())  # ["224²", "384²"]
 
 fig, axes = plt.subplots(1, 2, figsize=(5.5, 2.6), sharey=False)
@@ -297,7 +329,15 @@ print("\nGenerating model_scaling.png …")
 with open("results/Old/RTX/model_scaling.json") as f:
     ms = json.load(f)
 
-ms_bs    = ms["batch_sizes"]
+ms_bs = ms["batch_sizes"]
+# Filter to BS <= 16
+ms_bs_filtered = [bs for bs in ms_bs if bs <= 16]
+bs_indices_ms = [i for i, bs in enumerate(ms_bs) if bs <= 16]
+for model in ms["models"]:
+    for pipeline in ["padded", "triton", "fa2"]:
+        ms["models"][model][pipeline] = [ms["models"][model][pipeline][i] for i in bs_indices_ms]
+ms_bs = ms_bs_filtered
+
 model_order = ["DeiT-Ti", "DeiT-S", "DeiT-B"]
 pipeline_order = ["padded", "triton", "fa2"]
 pipe_labels = {"padded": "Padded SDPA", "triton": "Triton Ragged (ours)", "fa2": "FA2 varlen"}
